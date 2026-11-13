@@ -7,6 +7,13 @@ const { Pool, types } = require("pg");
 [1082, 1114, 1184].forEach(oid => types.setTypeParser(oid, v => v)); // fechas como texto, igual que antes
 let pool = global.__pgPool;
 const getPool = () => pool || (pool = global.__pgPool = new Pool({ connectionString:process.env.DATABASE_URL, ssl:process.env.DATABASE_SSL === "false" ? false : { rejectUnauthorized:false }, max:3 }));
+const memo = global.__crmMemo || (global.__crmMemo = new Map());
+async function cached(key, ms, fn) {
+  const h = memo.get(key); if (h && Date.now() - h.at < ms) return h.v;
+  const v = await fn(); memo.set(key, { at:Date.now(), v });
+  if (memo.size > 200) memo.delete(memo.keys().next().value);
+  return v;
+}
 const KAPSO_TOOLS = new Set(["list_whatsapp_conversations", "kapso_inbox_read", "list_whatsapp_messages"]);
 async function sql(query, maxRows) {
   const q = String(query || "").trim().replace(/;+\s*$/, "");
@@ -27,7 +34,7 @@ module.exports = requireAuth(async (req, res) => {
   if (req.method !== "POST") return send(res, 405, { error:"method" });
   const { server, tool, args = {} } = await body(req);
   let payload;
-  if (server === "Chambas" && tool === "execute_read_query") payload = await sql(args.query, args.max_rows);
+  if (server === "Chambas" && tool === "execute_read_query") payload = await cached("sql:" + args.query + ":" + args.max_rows, 60 * 1000, () => sql(args.query, args.max_rows));
   else if (server === "Kapso" && KAPSO_TOOLS.has(tool)) {
     if (!process.env.KAPSO_API_KEY) throw new Error("Falta KAPSO_API_KEY");
     const url = process.env.KAPSO_MCP_URL || "https://api.kapso.ai/mcp", hdr = { "X-API-Key":process.env.KAPSO_API_KEY };
@@ -48,7 +55,7 @@ module.exports = requireAuth(async (req, res) => {
   else if (server === "Google Drive" && tool === "download_file_content") {
     const allowedId = process.env.REVENUE_SHEET_ID || "1rzLd59jFMvJgFbDYyaTTnYhOTLYHbeIm8xGx-6btLm4";
     if (args.fileId !== allowedId) return send(res, 403, { error:"archivo_no_permitido" });
-    payload = { content:await exportXlsx(args.fileId), mimeType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
+    payload = { content:await cached("xlsx:" + args.fileId, 5 * 60 * 1000, () => exportXlsx(args.fileId)), mimeType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
   }
   else return send(res, 403, { error:"herramienta_no_permitida", server, tool });
   send(res, 200, { payload });
