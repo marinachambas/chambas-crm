@@ -12,16 +12,29 @@
 
   // ---- mcp
   const cache = new Map();
+  // caché persistente (IndexedDB): al recargar la página no se vuelve a pedir lo que sigue fresco
+  const idb = (() => { try { return new Promise((ok, bad) => { const r = indexedDB.open("crm-cache", 1); r.onupgradeneeded = () => r.result.createObjectStore("c"); r.onsuccess = () => ok(r.result); r.onerror = () => bad(r.error); }); } catch (_) { return Promise.reject(); } })();
+  const idbGet = async k => { try { const d = await idb; return await new Promise(ok => { const q = d.transaction("c").objectStore("c").get(k); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); }); } catch (_) { return null; } };
+  const idbSet = async (k, v) => { try { const d = await idb; d.transaction("c", "readwrite").objectStore("c").put(v, k); } catch (_) {} };
+  const inflight = new Map();
   const mcp = {
     async callTool(server, tool, input, opts = {}) {
       const key = JSON.stringify([server, tool, input]);
       const c = opts.cache || {};
-      const hit = cache.get(key);
-      if (hit && !c.refresh && Date.now() - hit.at < (c.staleTime || 0)) return { payload:hit.payload, cache:{ storedAt:hit.at } };
-      const j = await api("/api/mcp", { method:"POST", body:JSON.stringify({ server, tool, args:input }) });
-      cache.set(key, { payload:j.payload, at:Date.now() });
-      if (cache.size > 300) cache.delete(cache.keys().next().value);
-      return { payload:j.payload, cache:{ storedAt:Date.now() } };
+      const fresh = h => h && !c.refresh && Date.now() - h.at < (c.staleTime || 0);
+      let hit = cache.get(key);
+      if (!hit && c.staleTime && !c.refresh) { hit = await idbGet(key); if (hit) cache.set(key, hit); }
+      if (fresh(hit)) return { payload:hit.payload, cache:{ storedAt:hit.at } };
+      if (!c.refresh && inflight.has(key)) return inflight.get(key);
+      const p = (async () => {
+        const j = await api("/api/mcp", { method:"POST", body:JSON.stringify({ server, tool, args:input }) });
+        const v = { payload:j.payload, at:Date.now() };
+        cache.set(key, v); if (cache.size > 300) cache.delete(cache.keys().next().value);
+        if (c.staleTime) idbSet(key, v);
+        return { payload:j.payload, cache:{ storedAt:v.at } };
+      })();
+      inflight.set(key, p);
+      try { return await p; } finally { inflight.delete(key); }
     },
   };
 
