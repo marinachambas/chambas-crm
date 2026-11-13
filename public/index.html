@@ -2596,9 +2596,11 @@ async function classifyPendingTickets() {
   if (!pend.length) return;
   tkClasificando = { done:0, total:pend.length }; render();
   let i = 0;
-  const worker = async () => { while (i < pend.length) { const t = pend[i++]; try { await classifyTicket(t); } catch (e) { if (e && e.code === "rate_limited") { i = pend.length; toast("Límite de uso de Claude; intenta más tarde"); } } tkClasificando.done++; render(); } };
+  let fallas = 0, primerError = "";
+  const worker = async () => { while (i < pend.length) { const t = pend[i++]; try { await classifyTicket(t); } catch (e) { fallas++; if (!primerError) primerError = (e && (e.message || e.code)) || "error"; if (e && e.code === "rate_limited") { i = pend.length; toast("Límite de uso de Claude; intenta más tarde"); } } tkClasificando.done++; render(); } };
   await Promise.all([worker(), worker()]);
   tkClasificando = null; render();
+  if (fallas) toast(`No se pudieron clasificar ${fallas} tickets: ${String(primerError).slice(0, 120)}`);
 }
 function tkOwner(ph) {
   const r = raw.find(v => normPh(v.wa) === ph);
