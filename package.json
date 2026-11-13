@@ -1,0 +1,9 @@
+{
+  "name": "chambas-crm",
+  "private": true,
+  "version": "1.0.0",
+  "description": "CRM de vacantes · ChambasAI",
+  "engines": { "node": ">=20" },
+  "dependencies": { "pg": "^8.12.0" },
+  "scripts": { "dev": "node dev-server.js" }
+}
