@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Growth 1.2 · ChambasAI</title>
+<title>Growth 1.5 · ChambasAI</title>
 <style>
 :root{
   --bg:#ffffff; --bg-soft:#f7f7f5; --hover:rgba(55,53,47,.04); --hover-strong:rgba(55,53,47,.08);
@@ -418,7 +418,7 @@ tr.dim td{opacity:.55}
 <body>
 <main class="page">
   <div class="head">
-    <h1 id="app-name">Growth 1.2</h1>
+    <h1 id="app-name">Growth 1.5</h1>
     <div class="sect" id="sect" role="tablist"></div>
     <div class="updated" id="updated">Cargando…</div>
   </div>
@@ -2002,7 +2002,8 @@ async function setNoContactar(acc, on) {
 let cancelContacts = {}, cancelContactsKey = "";
 // candidatos que dijeron "me contrataron" y el cliente todavía no lo confirma
 let contratados = [], contrState = "idle";
-let contrCol = "", contrColAprox = false;
+let contrCol = "", contrColAprox = false, contrErr = "";
+const esSi = v => v === true || v === "true" || v === "t" || v === 1;
 async function loadContratados(fresh = false) {
   if (!mcp || contrState === "loading") return;
   contrState = "loading";
@@ -2010,18 +2011,21 @@ async function loadContratados(fresh = false) {
   try {
     // ¿qué columna guarda cuándo el candidato marcó "me contrataron"? (si no hay una, se usa la última actualización)
     if (!contrCol) {
-      const cols = (await call(`SELECT column_name FROM information_schema.columns WHERE table_name = 'interview'`)).map(c => c.column_name);
-      const exacta = cols.find(c => /hired/i.test(c) && /(_at|At|date|fecha)$/i.test(c));
-      contrCol = exacta || cols.find(c => /^updated_?at$/i.test(c)) || "";
+      let cols = [];
+      try { cols = (await call(`SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'interview'`)).filter(c => /timestamp|date/i.test(String(c.data_type || ""))).map(c => c.column_name); } catch (_) {}
+      const exacta = cols.find(c => /hired/i.test(c));
+      contrCol = exacta || cols.find(c => /^updated_?at$/i.test(c)) || "-";
       contrColAprox = !exacta;
     }
-    const fechaSql = contrCol ? `to_char(i."${contrCol}", 'YYYY-MM-DD HH24:MI')` : "NULL";
-    const q = `SELECT i.id::text iid, i."vacancyId"::text vid, to_char(i.created_at, 'YYYY-MM-DD') postulo, ${fechaSql} marco
+    const base = f => `SELECT i.id::text iid, i."vacancyId"::text vid, ${f} marco, (i.employed IS TRUE) confirmado
 FROM interview i JOIN vacancy v ON v.id = i."vacancyId"
 WHERE v.status = 'enable' AND v.deleted_at IS NULL AND i.deleted_at IS NULL
-  AND i.hired_by_candidate IN ('hired', 'yes') AND i.employed IS NOT TRUE`;
-    contratados = await call(q); contrState = "ok";
-  } catch (_) { contrState = "error"; }
+  AND i.hired_by_candidate IN ('hired', 'yes')`;
+    // si la columna de fecha falla, igual se traen los contratados (sin fecha)
+    try { contratados = await call(base(contrCol && contrCol !== "-" ? `to_char(i."${contrCol}", 'YYYY-MM-DD HH24:MI')` : "NULL")); }
+    catch (e1) { contrErr = "fecha: " + ((e1 && (e1.message || e1.code)) || "error"); contrCol = "-"; contratados = await call(base("NULL")); }
+    contrState = "ok";
+  } catch (e) { contrState = "error"; contrErr = (e && (e.message || e.code)) || "error"; }
   render();
 }
 // ¿El cliente se quejó en Kapso? (resumen de la conversación en "Molesto" o ticket clasificado como queja)
@@ -2449,16 +2453,17 @@ function todoTasks() {
         msg:o => `Hola, soy ${o} de Chambas 👋 Ya pasaron ${dias} días desde que publicaste tu última vacante con nosotros (${puesto}). ¿Tienes alguna nueva vacante que quieras cubrir? Con gusto te ayudo a publicarla.` });
     });
   }
-  // 12) Candidatos que dicen que ya los contrataron: confirmar con el cliente
-  const porVacC = {}; contratados.forEach(c => { (porVacC[c.vid] ||= []).push(c); });
+  // 12) Candidatos que marcaron "me contrataron" el día anterior (el lunes: viernes, sábado y domingo) → confirmar con el cliente
+  const diasContr = (() => { const x = new Date(hoy + "T12:00:00"), w = x.getDay(); const n = w === 1 ? 3 : w === 0 ? 2 : w === 6 ? 1 : 1; return Array.from({ length:n }, (_, k) => ymd(new Date(x.getTime() - (k + 1) * 864e5))); })();
+  const porVacC = {};
+  contratados.filter(c => !esSi(c.confirmado) && c.marco && diasContr.includes(String(c.marco).slice(0, 10))).forEach(c => { (porVacC[c.vid] ||= []).push(c); });
   Object.entries(porVacC).forEach(([vid, cs]) => {
     const r = raw.find(v => v.id === vid); if (!r || r.jobType === "ai_work") return;
     if (noContactar[r.acc] || /@chambas\.ai$/i.test(r.email || "")) return;
     const n = cs.length;
-    tasks.push({ key:`contrato:${vid}:${n}`, acc:r.acc, grupo:"Contrataciones", tipo:"contrato", a:{ empresa:r.empresa, email:r.email, tel:r.tel, wa:r.wa }, peso:n,
+    tasks.push({ key:`contrato:${vid}:${laboral(hoy)}`, acc:r.acc, grupo:"Contrataciones", tipo:"contrato", a:{ empresa:r.empresa, email:r.email, tel:r.tel, wa:r.wa }, peso:n,
       head:`Confirmar contratación con <b>${esc(r.empresa)}</b> · ${esc(r.vacante)}`,
-      lines:[`<span class="tag green">🎉 ${n} ${n === 1 ? "candidato dice" : "candidatos dicen"} que ya ${n === 1 ? "lo contrataron" : "los contrataron"}</span> · el cliente todavía no lo confirma`,
-        `${contrColAprox ? "Marcado (aprox.)" : "Marcó que fue contratado"}: ${cs.map(c => c.marco ? `<b>${esc(fmtShort(String(c.marco).slice(0, 10)))}${String(c.marco).length > 10 ? ", " + esc(String(c.marco).slice(11, 16)) : ""}</b>` : "sin fecha").sort().join(" · ")}`,
+      lines:[`<span class="tag green">🎉 ${n} ${n === 1 ? "candidato marcó" : "candidatos marcaron"} que ${n === 1 ? "lo contrataron" : "los contrataron"}</span> · ${cs.map(c => `<b>${esc(fmtShort(String(c.marco).slice(0, 10)))}${String(c.marco).length > 10 ? ", " + esc(String(c.marco).slice(11, 16)) : ""}</b>`).sort().join(" · ")}${contrColAprox ? " (aprox.)" : ""}`,
         `${emo(r.puesto)} ${esc(r.puesto || "")} · ${r.post} postulados · ${r.asist} asistencias · ${r.contr} contratados en el CRM`],
       msg:o => `Hola, soy ${o} de Chambas 👋 ${n === 1 ? "Uno de tus candidatos" : n + " de tus candidatos"} de la vacante "${r.vacante}" nos ${n === 1 ? "dijo" : "dijeron"} que ya ${n === 1 ? "lo contrataste" : "los contrataste"} 🎉 ¿Nos confirmas si ${n === 1 ? "quedó" : "quedaron"}? Así actualizamos tu vacante.` });
   });
@@ -2486,7 +2491,7 @@ const TODO_TIPOS = {
   fac_emi:{ titulo:"Emitir factura", instr:"Ya mandaron sus datos fiscales: emitir la factura y enviarla. Al terminar, pica “Marcar emitida”. Si al final no se va a emitir, pica “Marcar no emitida”. Las dos se actualizan también en la sección Facturas." },
   ticket:{ titulo:"Tickets de soporte sin resolver", instr:"Tickets donde el cliente pidió hablar con una persona, quiere cancelar o quiere comprar más, y que siguen sin resolverse. Contestar en Kapso y marcar como hecha cuando quede resuelto." },
   react:{ titulo:"Clientes sin publicar en más de 3 meses", instr:"Clientes que llevan más de 3 meses sin publicar, no tienen vacantes activas ni plan, y no tienen quejas en Kapso. Escribirles para saber si tienen una nueva vacante que cubrir. El botón de WhatsApp abre con el mensaje escrito." },
-  contrato:{ titulo:"Confirmar contratación con el cliente", instr:"Un candidato marcó que ya lo contrataron. Confirmar con el cliente si de verdad quedó contratado. El botón de WhatsApp abre con el mensaje escrito." },
+  contrato:{ titulo:"Confirmar contratación con el cliente", instr:"Candidatos que ayer marcaron que ya los contrataron (el lunes también los del fin de semana). Confirmar con el cliente si de verdad quedaron contratados. La lista completa está en Insights › Contratados." },
   upsell:{ titulo:"Ofrecer el paquete de $2,500", instr:"Clientes que pagan por vacante y: tienen una vacante con más de 40 postulados en sus primeros 10 días, o han publicado más de una vacante con nosotros y tienen una vacante con buen rendimiento (semáforo verde). Ofrecerles el paquete de 5 vacantes por $2,500." },
   pdec:{ titulo:"¿Pautar o no pautar?", instr:"Vacantes con suscripción vigente, publicadas hace más de 48 horas, con 18+ días por delante y bajo rendimiento (menos de 10 postulados, menos de 5 asistencias y 0 contratados). Revisa la vacante y decide: si la quieres pautar, le llega a Marina en “Por pautar”." },
   pack0:{ titulo:"Cuentas sin publicar vacante", instr:"Contactar para presionar a publicar: ayúdales a subir su primera vacante y recuérdales que tienen 5 créditos pagados." },
@@ -2630,9 +2635,10 @@ function renderTodo(mode = "hoy") {
   };
   const html = Object.entries(groups).map(([g, tipos]) => `<div class="todo-group">${Object.entries(tipos).map(([tp, arr]) => `<div class="todo-type"><div class="todo-type-h"><b>${esc(TODO_TIPOS[tp].titulo)}</b> <span class="muted">· ${arr.length}</span></div><div class="todo-instr">${esc(TODO_TIPOS[tp].instr)}</div>${arr.map(item).join("")}</div>`).join("")}</div>`).join("");
   const resumenAtr = mode === "atr" ? `<div class="atr-sum">${TODO_FILTRO_PERSONAS.map(o => { const mine = open.filter(t => t.owner === o); if (!mine.length) return `<div class="atr-p">${tag(o, OWNER_COLOR[o] || "gray")} <span class="good">al día ✓</span></div>`; const vieja = mine.map(t => creadaDe(t.d)).filter(Boolean).sort()[0]; const n = vieja ? diasHabiles(vieja, hoyD) : 0; return `<div class="atr-p">${tag(o, OWNER_COLOR[o] || "gray")} <b class="${mine.length >= 10 ? "zero" : "low"}">${mine.length}</b> ${mine.length === 1 ? "atrasada" : "atrasadas"} <span class="muted small">· la más vieja de hace ${n} ${n === 1 ? "día" : "días"}</span></div>`; }).join("")}</div>` : "";
+  const diagC = todoGrupo === "Contrataciones" ? `<div class="small muted" style="margin-top:8px">Contrataciones: ${contrState === "loading" ? "cargando…" : contrState === "error" ? `<span class="zero">no se pudieron leer (${esc(contrErr)})</span> · <button class="linkbtn small" data-contrretry>Reintentar</button>` : `${contratados.length} candidatos marcaron “contratado” en vacantes activas · ${new Set(contratados.map(c => c.vid)).size} vacantes · ${contratados.filter(c => raw.some(r => r.id === c.vid)).length} en vacantes del CRM${contrErr ? ` · ${esc(contrErr)}` : ""} · fecha: ${contrCol && contrCol !== "-" ? esc(contrCol) : "sin columna"}`}</div>` : "";
   return `${resumenAtr}<div class="rchips" style="margin-top:14px">${chips}</div>
     <div class="seg2 todo-gtabs">${gtabs}</div>
-    ${subHtml}
+    ${subHtml}${diagC}
     ${!db ? `<div class="note">En esta vista no se pueden guardar tareas.</div>` : ""}
     ${html || `<div class="state"><b>${todoFilter === "done" ? "Todavía no hay tareas hechas" : "No hay tareas pendientes"}</b></div>`}
     <div class="foot">Las tareas se generan con los datos del CRM y se reparten parejo entre ${TODO_OWNERS.join(" y ")} (a quien tenga menos pendientes; cada cuenta se queda con su ejecutivo) · los upsells los atiende Moy · clic en el nombre para reasignar · al marcar la casilla queda como hecha para todo el equipo</div>`;
@@ -3039,6 +3045,35 @@ function cliInvertido(c) {
   else { c.invertido = c.invertidoDb; c.fuenteInv = "según pagos del sistema"; }
   return c;
 }
+let contrFiltro = "pend";
+function renderContratadosIns() {
+  if (contrState === "idle") loadContratados();
+  if (contrState !== "ok" && !contratados.length) return contrState === "error" ? `<div class="state"><b>No se pudieron leer los contratados</b>${esc(contrErr)}<button data-contrretry>Intentar de nuevo</button></div>` : skeleton();
+  const q = query.trim().toLowerCase();
+  const porVac = {}; contratados.forEach(c => { (porVac[c.vid] ||= []).push(c); });
+  let rows = Object.entries(porVac).map(([vid, cs]) => {
+    const r = raw.find(v => v.id === vid) || null;
+    const fechas = cs.map(c => c.marco ? String(c.marco) : "").filter(Boolean).sort();
+    const pend = cs.filter(c => !esSi(c.confirmado)).length;
+    return { vid, r, cs, n:cs.length, pend, conf:cs.length - pend, ult:fechas[fechas.length - 1] || "", fechas };
+  }).filter(x => x.r && (!q || `${x.r.vacante} ${x.r.empresa} ${x.r.email}`.toLowerCase().includes(q)));
+  const nPend = rows.filter(x => x.pend).length, nConf = rows.filter(x => !x.pend).length;
+  if (contrFiltro === "pend") rows = rows.filter(x => x.pend); else if (contrFiltro === "conf") rows = rows.filter(x => !x.pend);
+  rows.sort((a, b) => String(b.ult).localeCompare(String(a.ult)));
+  const f = d => d ? `${esc(fmtShort(d.slice(0, 10)))}${d.length > 10 ? ", " + esc(d.slice(11, 16)) : ""}` : "sin fecha";
+  const chips = [["pend", "Sin confirmar por el cliente", nPend], ["conf", "Ya confirmados", nConf], ["all", "Todos", nPend + nConf]].map(([k, l, n]) => `<button class="rchip${contrFiltro === k ? " on" : ""}" data-contrf="${k}">${l} <b>${n}</b></button>`).join("");
+  const body = rows.map(x => { const o = ejecDeCuenta(x.r.acc); return `<tr>
+      <td><div class="kcell" style="align-items:flex-start;white-space:normal"><span class="btnstack">${waBtn(x.r)}${kapsoBtn(x.r.wa)}</span><div><div class="v-name">${emo(x.r.puesto)} ${esc(x.r.vacante)}</div><div class="v-mail">${esc(x.r.empresa)} · ${esc(x.r.email)}</div></div></div></td>
+      <td>${o ? tag(o, OWNER_COLOR[o] || "gray") : '<span class="muted small">—</span>'}</td>
+      <td class="num"><b>${x.n}</b>${x.conf ? `<div class="vs">${x.conf} confirmados</div>` : ""}</td>
+      <td class="small">${x.fechas.length ? x.fechas.map(f).join("<br>") : "sin fecha"}${contrColAprox ? '<div class="vs" style="text-align:left">aprox.</div>' : ""}</td>
+      <td>${x.pend ? tag(`${x.pend} sin confirmar`, "orange") : tag("Confirmado", "green")}</td>
+      <td class="num small">${x.r.post} postulados<div class="vs">${x.r.asist} asistencias</div></td>
+    </tr>`; }).join("");
+  return `<div class="rchips" style="margin-top:14px">${chips}</div>
+    ${rows.length ? `<div class="tablewrap" style="margin-top:10px"><table style="min-width:900px"><thead><tr><th><button>Vacante</button></th><th><button>Ejecutivo</button></th><th class="num"><button>Marcaron contratado</button></th><th><button>Cuándo lo marcaron</button></th><th><button>Cliente</button></th><th class="num"><button>Vacante</button></th></tr></thead><tbody>${body}</tbody></table></div>` : `<div class="state"><b>No hay vacantes en este filtro</b></div>`}
+    <div class="foot">Candidatos que marcaron “me contrataron” en vacantes activas · “sin confirmar” = el cliente todavía no lo marcó como contratado en la plataforma · en el To-do sale al día siguiente de que el candidato lo marcó (el lunes, también los del fin de semana)${contrCol && contrCol !== "-" ? ` · fecha tomada de ${esc(contrCol)}` : " · no hay columna de fecha en la base"}</div>`;
+}
 function renderClientes() {
   if (cliState === "idle") loadClientes();
   if ((cliState === "loading" || cliState === "idle") && !cliRows.length) return skeleton();
@@ -3191,8 +3226,8 @@ function renderInner() {
   if (section === "sop") { if (riskState === "idle") { loadRisk(); return; } $("content").innerHTML = renderSoporte(); return; }
   if (section === "fact") { if (riskState === "idle") { loadRisk(); return; } $("content").innerHTML = renderFacturas(); return; }
   if (section === "todo") { const nAtr = (packRows.length || riskRows.length) ? todoAtrasadas().length : 0; const nPP = Object.values(pautaReq).filter(x => x.decision === "si" && x.estado === "pendiente").length; $("seg").innerHTML = `<button aria-pressed="${todoView === "hoy"}" data-todoview="hoy">Tareas de hoy</button><button aria-pressed="${todoView === "pp"}" data-todoview="pp">Por pautar<span class="n">${nPP}</span></button><button aria-pressed="${todoView === "atr"}" data-todoview="atr">Días anteriores<span class="n ${nAtr ? "zero" : ""}">${nAtr}</span></button><button aria-pressed="${todoView === "prog"}" data-todoview="prog">Progreso</button>`; if (todoView === "pp") { $("content").innerHTML = renderPorPautar(); return; } if (packState === "idle") loadPack(); if (riskState === "idle") loadRisk(); loadHistVacs(); loadPost10(); if (contrState === "idle") loadContratados(); if (cliState === "idle") loadClientes(); if (tkState === "idle") loadTickets(); if (quejasState === "idle") loadQuejas(); if (cohState === "idle") loadCoh(); if (cancelState === "idle") loadCancels(); else if (cancelState === "ok") loadCancelContacts(); if (todoView === "prog") { $("content").innerHTML = renderProgreso(); return; } if (todoView === "atr") { $("content").innerHTML = renderTodo("atr"); return; } $("content").innerHTML = renderTodo(); return; }
-  if (section === "ins") $("seg").innerHTML = [["canc90", "Cancelaciones · 90 días"], ["canc30", "Cancelaciones · 30 días"], ["cancres", "Cancelaciones · 90 vs 30"], ["resp", "Tiempo de respuesta"], ["clientes", "Clientes"]].map(([id, l]) => `<button aria-pressed="${insView === id}" data-insview="${id}">${l}</button>`).join("");
-  if (section === "ins") { if (cancDState === "idle") loadCancData(); $("content").innerHTML = insView === "clientes" ? renderClientes() : insView === "resp" ? renderRespuesta() : insView === "cancres" ? renderCancResumen() : renderCancelaciones(insView === "canc30" ? 30 : 90); if (openId) renderPanel(); return; }
+  if (section === "ins") $("seg").innerHTML = [["canc90", "Cancelaciones · 90 días"], ["canc30", "Cancelaciones · 30 días"], ["cancres", "Cancelaciones · 90 vs 30"], ["resp", "Tiempo de respuesta"], ["clientes", "Clientes"], ["contratados", "Contratados"]].map(([id, l]) => `<button aria-pressed="${insView === id}" data-insview="${id}">${l}</button>`).join("");
+  if (section === "ins") { if (cancDState === "idle") loadCancData(); $("content").innerHTML = insView === "contratados" ? renderContratadosIns() : insView === "clientes" ? renderClientes() : insView === "resp" ? renderRespuesta() : insView === "cancres" ? renderCancResumen() : renderCancelaciones(insView === "canc30" ? 30 : 90); if (openId) renderPanel(); return; }
   if (section === "cal" && calView === "pack") {
     if (riskState === "idle") loadRisk();
     const sw = `<div class="seg2">${[["seg", "Seguimiento"], ["coh", "Cohortes"]].map(([id, l]) => `<button aria-pressed="${packView === id}" data-packview="${id}">${l}</button>`).join("")}</div>`;
@@ -3461,6 +3496,8 @@ document.addEventListener("click", e => {
   const cs_ = t.closest("[data-clisort]"); if (cs_) { cliSort = cs_.dataset.clisort; render(); return; }
   if (t.closest("[data-cliretry]")) { loadClientes(true); return; }
   const ad_ = t.closest("[data-actdia]"); if (ad_) { actDia = ad_.dataset.actdia; render(); return; }
+  if (t.closest("[data-contrretry]")) { contrState = "idle"; contrCol = ""; contrErr = ""; loadContratados(true); return; }
+  const cf_ = t.closest("[data-contrf]"); if (cf_) { contrFiltro = cf_.dataset.contrf; render(); return; }
   const rtr_ = t.closest("[data-rtr]"); if (rtr_) { rtRange = rtr_.dataset.rtr; render(); return; }
   const tkr_ = t.closest("[data-tkr]"); if (tkr_) { tkRange = tkr_.dataset.tkr; tkFiltro = null; render(); return; }
   const tkf_ = t.closest("[data-tkf]"); if (tkf_) { tkFiltro = tkFiltro === tkf_.dataset.tkf || tkf_.dataset.tkf === "noop" ? null : tkf_.dataset.tkf; render(); return; }
