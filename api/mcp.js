@@ -30,7 +30,19 @@ module.exports = requireAuth(async (req, res) => {
   if (server === "Chambas" && tool === "execute_read_query") payload = await sql(args.query, args.max_rows);
   else if (server === "Kapso" && KAPSO_TOOLS.has(tool)) {
     if (!process.env.KAPSO_API_KEY) throw new Error("Falta KAPSO_API_KEY");
-    payload = await callTool(process.env.KAPSO_MCP_URL || "https://api.kapso.ai/mcp", { "X-API-Key":process.env.KAPSO_API_KEY }, tool, args);
+    const url = process.env.KAPSO_MCP_URL || "https://api.kapso.ai/mcp", hdr = { "X-API-Key":process.env.KAPSO_API_KEY };
+    if (tool === "kapso_inbox_read") {
+      // kapso_inbox_read solo existe dentro de claude.ai: aquí se leen los mensajes de la conversación con list_whatsapp_messages
+      const r = await callTool(url, hdr, "list_whatsapp_messages", { conversation_id:args.conversation_id, limit:100 });
+      const data = Array.isArray(r && r.data) ? r.data : [];
+      payload = { messages:data.map(m => {
+        const k = m.kapso || {};
+        const ts = Number(m.timestamp);
+        return { created_at:ts ? new Date(ts * 1000).toISOString() : (m.created_at || ""), direction:k.direction || (m.from ? "inbound" : "outbound"),
+          content:k.content || (m.text && m.text.body) || (m.button && m.button.text) || "", caption:(m.document && m.document.caption) || (m.image && m.image.caption) || "",
+          message_type:m.type, has_media:!!k.has_media, filename:(m.document && m.document.filename) || (k.media_data && k.media_data.filename) || "", link:(m.document && m.document.link) || k.media_url || "" };
+      }).reverse() };
+    } else payload = await callTool(url, hdr, tool, args);
   }
   else if (server === "Slack" && tool === "slack_search_public") payload = await searchChannel(args);
   else if (server === "Google Drive" && tool === "download_file_content") {
