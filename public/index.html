@@ -217,6 +217,30 @@ tr.daytoday td{background:var(--hover)}
 .atr-sum{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg-soft)}
 .atr-p{font-size:14px}
 .queja-box{margin-top:4px;padding:6px 8px;border-left:3px solid #e03e3e;background:rgba(224,62,62,.06);border-radius:4px;color:var(--text);font-size:13px}
+.nota-btn{border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px;background:var(--bg);cursor:pointer;display:inline-flex;gap:3px;align-items:center;margin-right:6px}
+.nota-btn span{font-size:11px;color:var(--text-2);font-weight:600}
+.nota-btn:hover{background:var(--hover)}
+.cli-row{cursor:pointer}
+.cli-row:hover td{background:var(--hover)}
+.nm-ov{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;overflow:auto}
+.nm{background:var(--bg);color:var(--text);border-radius:12px;width:100%;max-width:620px;box-shadow:0 12px 40px rgba(0,0,0,.25);padding:20px}
+.nm-h{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.nm-t{font-size:20px;font-weight:700}
+.nm-x{font-size:18px;color:var(--text-2);padding:2px 8px;border-radius:6px}
+.nm-x:hover{background:var(--hover)}
+.nm-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:16px 0}
+.nm-stats div{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column}
+.nm-stats span{font-size:11px;color:var(--text-2);text-transform:uppercase;letter-spacing:.03em}
+.nm-stats b{font-size:17px;margin-top:2px}
+.nm-stats small{font-size:11px;color:var(--text-3)}
+@media (max-width:560px){.nm-stats{grid-template-columns:repeat(2,1fr)}}
+.nm-new{margin-top:14px}
+.nm-new textarea{width:100%;font:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);resize:vertical;box-sizing:border-box}
+.nm-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
+.nm-row select{font:inherit;font-size:13px;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
+.nm-list{margin-top:16px;display:flex;flex-direction:column;gap:10px;max-height:46vh;overflow:auto}
+.nm-n{border-left:3px solid var(--line);padding:4px 10px}
+.nm-txt{white-space:pre-wrap;font-size:14px;margin-top:3px}
 .tk-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}
 .tk-dates input{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--text)}
 .tk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:10px}
@@ -857,6 +881,8 @@ async function scanFactura(ph) {
 }
 function etapaDe(d) {
   if (!d) return "sin";
+  // marcada como no emitida: se queda ahí salvo que el cliente vuelva a pedir factura después
+  if (d.no_emitida_at && !(d.req_last && d.req_last > d.no_emitida_at)) return "no_emitida";
   if (d.emitida_at) {
     if (!(d.req_last && d.req_last > d.emitida_at)) return "emitida";
     return d.datos_last && d.datos_last > d.emitida_at ? "datos" : "solicito";
@@ -864,7 +890,7 @@ function etapaDe(d) {
   return d.etapa || "sin";
 }
 const normPh = x => { let d = String(x || "").replace(/\D/g, ""); if (d.length === 13 && d.startsWith("521")) d = "52" + d.slice(3); if (d.length === 10) d = "52" + d; return d; };
-const FACT_RANK = d => { const e = etapaDe(d); return { sin:0, solicito:1, datos:2, emitida:3 }[e] || 0; };
+const FACT_RANK = d => { const e = etapaDe(d); return { sin:0, solicito:1, datos:2, emitida:3, no_emitida:3 }[e] || 0; };
 function factItems() {
   const q = query.trim().toLowerCase();
   const phones = {}, mails = {};
@@ -935,7 +961,7 @@ async function scanFacturasAll(full) {
   for (const [ph, doc] of writes) { try { if (doc) await db.collection("facturas").doc(ph).set(doc); else await db.collection("facturas").doc(ph).delete(); } catch (_) {} }
   await metaRef.set({ hasta:startedAt, v:2 }).catch(() => {});
 }
-const FACT_TABS = [["sin", "Sin factura solicitada"], ["solicito", "Solicitó factura"], ["datos", "Compartió sus datos"], ["emitida", "Factura emitida"]];
+const FACT_TABS = [["sin", "Sin factura solicitada"], ["solicito", "Solicitó factura"], ["datos", "Compartió sus datos"], ["emitida", "Factura emitida"], ["no_emitida", "No emitida"]];
 const fFecha = iso => iso ? fmtDate(mxDate(iso)) : "—";
 function renderFacturas() {
   if (riskState !== "ok" && !riskRows.length) return skeleton();
@@ -945,6 +971,9 @@ function renderFacturas() {
   if (factStage === "sin") {
     head = ["Cliente", "Vacantes activas", "Habló con Kapso"];
     body = list.map(x => { const k = x.wa && kapso[x.wa]; return `<tr>${cli(x)}<td class="num">${x.vacs ?? "—"}</td><td>${k ? `\ud83d\udcac ${esc(fmtShort(mxDate(k.at)))}` : '<span class="muted">—</span>'}</td></tr>`; });
+  } else if (factStage === "no_emitida") {
+    head = ["Cliente", "Solicitó", "Marcada como no emitida", ""];
+    body = list.map(x => `<tr>${cli(x)}<td>${esc(fFecha(x.d.req_last || x.d.solicito_at))}</td><td>${esc(fFecha(x.d.no_emitida_at))}${x.d.rfc ? `<div class="vs" style="text-align:left">RFC ${esc(x.d.rfc)}</div>` : ""}</td><td style="text-align:right">${db ? `<button class="end-btn" data-fnoback="${esc(x.wa)}">Regresar</button>` : ""}</td></tr>`);
   } else if (factStage === "emitida") {
     head = ["Cliente", "Emitida", "RFC", ""];
     body = list.map(x => `<tr>${cli(x)}<td>${esc(fFecha(x.d.emitida_at))}</td><td>${esc(x.d.rfc || "—")}</td><td style="text-align:right">${db ? `<button class="end-btn" data-fback="${esc(x.wa)}">Regresar</button>` : ""}</td></tr>`);
@@ -956,11 +985,18 @@ function renderFacturas() {
         ? `${d.rfc ? `<b>${esc(d.rfc)}</b>` : '<span class="muted">RFC no detectado</span>'}${d.adjunto ? ` · <a href="${esc(d.adjunto)}" target="_blank" rel="noopener">Ver archivo</a>` : ""}<div class="vs" style="text-align:left">compartió ${esc(fFecha(d.datos_last || d.datos_at))}</div>`
         : `<span class="small">${esc(d.texto || "")}</span>`;
       const hint = d.enviada_at && (!d.req_last || d.enviada_at > d.req_last) ? `<div class="vs" style="color:var(--orange-text)">Kapso dice que ya la envió (${esc(fFecha(d.enviada_at))})</div>` : "";
-      return `<tr>${cli(x)}<td>${esc(fFecha(d.req_last || d.solicito_at))}</td><td style="max-width:360px">${mid}</td><td style="text-align:right">${db ? `<button class="end-btn" data-femit="${esc(x.wa)}">Marcar emitida</button>` : ""}${hint}</td></tr>`;
+      return `<tr>${cli(x)}<td>${esc(fFecha(d.req_last || d.solicito_at))}</td><td style="max-width:360px">${mid}</td><td style="text-align:right">${db ? `<div class="pp-actions" style="justify-content:flex-end"><button class="end-btn" data-femit="${esc(x.wa)}">Marcar emitida</button><button class="end-btn" data-fnoemit="${esc(x.wa)}" title="Se solicitó pero no se va a emitir">No emitida</button></div>` : ""}${hint}</td></tr>`;
     });
   }
   const note = !Object.keys(facturas).length ? `<div class="note">${autoRun ? "Revisando conversaciones de Kapso para detectar solicitudes de factura…" : "Pica Actualizar (arriba a la derecha) para revisar Kapso y detectar solicitudes de factura."}</div>` : "";
   return `${note}${list.length ? `<div class="tablewrap"><table><thead><tr>${head.map(h => `<th><button>${h}</button></th>`).join("")}</tr></thead><tbody>${body.join("")}</tbody></table></div>` : `<div class="state"><b>Nada en esta etapa</b></div>`}<div class="foot">${list.length} ${list.length === 1 ? "cliente" : "clientes"} · Clientes con vacantes activas · se detecta en todos los mensajes que mandaron a Soporte en Kapso; “emitida” se marca a mano</div>`;
+}
+async function setNoEmitida(ph, on) {
+  const prev = facturas[ph]; if (!db || !prev) return;
+  const doc = { ...prev, no_emitida_at:on ? new Date().toISOString() : null, no_emitida_by:on ? (myId || null) : null, updatedAt:Date.now() };
+  facturas = { ...facturas, [ph]:doc }; render();
+  try { await db.collection("facturas").doc(ph).set(doc); toastUndo(on ? "Marcada como no emitida" : "Regresada", () => setNoEmitida(ph, !on)); }
+  catch (_) { facturas = { ...facturas, [ph]:prev }; render(); toast("No se guardó. Intenta de nuevo."); }
 }
 async function setEmitida(ph, on) {
   const prev = facturas[ph]; if (!db || !prev) return;
@@ -1274,7 +1310,7 @@ function renderResumen() {
     const done = x._e === "renovado" || x._e === "no_renovo" || x._e === "cancelada" || x._e === "cerrada";
     const pPct = Math.round(x._p * 100);
     return `<tr class="${done ? "struck" : ""}${x._e === "cancelada" || x._e === "cerrada" ? " dim" : ""}">
-      <td><div class="v-name">${esc(x.empresa || "—")}</div><div class="v-co">${esc(x.detalle)}${x.tipo === "suscripcion" ? "" : ""}</div></td>
+      <td><div class="v-name">${esc(x.empresa || "—")}</div><div class="v-co">${esc(x.detalle)} ${metodoTag(x.metodo)}</div></td>
       <td class="small">${esc(x.renov_at ? x.renov_at.slice(11, 16) : x.hora || "")}</td>
       <td class="num"><b>${money(x.amount)}</b></td>
       <td class="num"><span class="${pPct < 15 ? "zero" : pPct < 30 ? "low" : "good"}">${pPct}%</span></td>
@@ -1308,7 +1344,7 @@ function renderResumen() {
         const [lbl, col] = RSTATE[x._e] || [x._e, "gray"];
         const done = x._e !== "pendiente" && x._e !== "reintentando";
         const pPct = Math.round(x._p * 100);
-        return `<div class="tl-row${done ? " struck" : ""}${x._e === "cancelada" || x._e === "cerrada" ? " dim" : ""}"><div class="tl-name"><div class="tl-who">${contactBtns(x)}<div style="min-width:0"><div class="v-name">${esc(x.empresa || "—")}</div><div class="v-co">${esc(x.detalle)}</div></div></div></div><div class="tl-amt">${money(x.amount)}</div><div class="tl-p ${pPct < 15 ? "zero" : pPct < 30 ? "low" : "good"}" title="Probabilidad de renovación">${pPct}%</div><span class="tag ${col}">${x._e === "renovado" ? "✓ " : ""}${lbl}</span></div>`;
+        return `<div class="tl-row${done ? " struck" : ""}${x._e === "cancelada" || x._e === "cerrada" ? " dim" : ""}"><div class="tl-name"><div class="tl-who">${contactBtns(x)}<div style="min-width:0"><div class="v-name">${esc(x.empresa || "—")}</div><div class="v-co">${esc(x.detalle)} ${metodoTag(x.metodo)}</div></div></div></div><div class="tl-amt">${money(x.amount)}</div><div class="tl-p ${pPct < 15 ? "zero" : pPct < 30 ? "low" : "good"}" title="Probabilidad de renovación">${pPct}%</div><span class="tag ${col}">${x._e === "renovado" ? "✓ " : ""}${lbl}</span></div>`;
       }).join("") : `<div class="muted" style="padding:12px">No hay renovaciones programadas para hoy</div>`}</div>
     </div>
     <div class="today-cards">
@@ -1351,7 +1387,9 @@ function renderMes() {
   if (useSheet) renovMMeta = { m0:localToday().slice(0, 7) + "-01", ahora:hoyMx() };
   const q = query.trim().toLowerCase();
   const m0_ = renovMMeta.m0 || localToday().slice(0, 7) + "-01"; const [yy_, mm_] = m0_.split("-").map(Number);
-  const rows = (useSheet ? sheetToRenov(m0_, ymd(new Date(yy_, mm_, 1))) : prepRenov(renovMRows, m0_, ymd(new Date(yy_, mm_, 1)))).map(x => { const e = renovEstado(x); return { ...x, _e:e, _p:renovProb(x, e) }; }).filter(x => !q || `${x.empresa} ${x.detalle}`.toLowerCase().includes(q));
+  // pago manual (transferencia u Oxxo): casi nunca renueva solo → 5%
+  const pManual = (x, e) => (/^(Transferencia|Oxxo)$/.test(x.metodo || "") && !["renovado", "cancelada", "cerrada"].includes(e)) ? 0.05 : renovProb(x, e);
+  const rows = (useSheet ? sheetToRenov(m0_, ymd(new Date(yy_, mm_, 1))) : prepRenov(renovMRows, m0_, ymd(new Date(yy_, mm_, 1)))).map(x => { const e = renovEstado(x); return { ...x, _e:e, _p:pManual(x, e) }; }).filter(x => !q || `${x.empresa} ${x.detalle}`.toLowerCase().includes(q));
   const hoy = (renovMMeta.ahora || "").slice(0, 10) || localToday();
   const m0 = renovMMeta.m0 || hoy.slice(0, 7) + "-01";
   const [Y, M] = m0.split("-").map(Number);
@@ -2045,7 +2083,7 @@ const PROG_RB = [
   ["quejas", "Quejas atendidas"], ["pack_pub", "Cuentas $2,500 que publicaron"], ["vac0", "Vacantes revisadas"], ["pdec", "Decisiones de pauta"],
 ];
 const PROG_MOY = [["up_of", "Upsells ofrecidos"], ["up_vend", "Upsells vendidos"]];
-const CONTACTO = new Set(["pack0", "quejas", "seg8", "seg10", "seg15", "cancel6", "fac_sol", "fac_emi", "upsell", "ticket"]);
+const CONTACTO = new Set(["react", "pack0", "quejas", "seg8", "seg10", "seg15", "cancel6", "fac_sol", "fac_emi", "upsell", "ticket"]);
 function renderProgreso() {
   loadPubsAcc(); if (sheetState === "idle") loadSheet();
   const hoy = localToday();
@@ -2068,7 +2106,7 @@ function renderProgreso() {
     let mets;
     if (o === "Moy") {
       const sumV = ventasUp.reduce((s, v) => s + v.monto, 0);
-      mets = [["Upsells ofrecidos", cnt("upsell"), "tareas de upsell marcadas como hechas"],
+      mets = [["Upsells ofrecidos", cnt("upsell"), "tareas de upsell marcadas como hechas"], ["Clientes reactivados contactados", cnt("react"), "clientes de más de 3 meses sin publicar"],
         ["Upsells vendidos", sheetState === "ok" ? ventasUp.length : "—", sheetState === "ok" ? (ventasUp.length ? `${money(sumV)} · hoja Revenue, tipo “Upsell”` : "hoja Revenue, tipo “Upsell”") : sheetState === "error" ? "no se pudo leer la hoja" : "leyendo la hoja…"]];
     } else {
       const packPub = h.filter(x => x.d.tipo === "pack0" && x.d.acc).filter(x => { const d0 = x.d.doneAt.slice(0, 10), d1 = masDias3(d0); return (pubsAcc[x.d.acc] || []).some(d => d >= d0 && d <= d1); }).length;
@@ -2183,7 +2221,7 @@ const QUEJA_MIN_NOCONT = 5;
 const lunesDe = d => { const x = new Date(d + "T12:00:00"); const k = (x.getDay() + 6) % 7; x.setDate(x.getDate() - k); return ymd(x); };
 const TODO_OWNERS = ["Rodrigo", "Berny"];
 let todoDocs = {}, todoFilter = "all", todoGrupo = "Cuentas $2,500";
-const TODO_GRUPOS = ["Cuentas $2,500", "Experiencia de candidatos", "Vacantes", "Seguimiento", "Decisión de pauta", "Reactivaciones", "Facturas", "Upsells", "Soporte"];
+const TODO_GRUPOS = ["Cuentas $2,500", "Experiencia de candidatos", "Vacantes", "Seguimiento", "Decisión de pauta", "Reactivaciones", "Facturas", "Upsells", "Reactivar clientes", "Soporte"];
 function todoTasks() {
   const tasks = [];
   const hoy = localToday();
@@ -2300,7 +2338,7 @@ function todoTasks() {
     const d = x.d || {};
     const a = { empresa:x.nombre, email:x.email, tel:x.tel, wa:x.wa };
     const ped = d.req_last || d.solicito_at || "";
-    if (x.etapa === "solicito") tasks.push({ key:`fac:sol:${x.key}:${String(ped).slice(0, 10)}`, acc:x.key, grupo:"Facturas", tipo:"fac_sol", a, peso:-Number(String(ped).replace(/\D/g, "").slice(0, 12) || 0),
+    if (x.etapa === "solicito") tasks.push({ key:`fac:sol:${x.key}:${String(ped).slice(0, 10)}`, acc:x.key, grupo:"Facturas", tipo:"fac_sol", a, facWa:x.wa, peso:-Number(String(ped).replace(/\D/g, "").slice(0, 12) || 0),
       lines:[`Pidió factura el ${esc(fFecha(ped))}${d.texto ? ` · “${esc(d.texto.slice(0, 120))}”` : ""}`, kapsoLine(x.wa, String(ped).slice(0, 10))],
       msg:o => `Hola, soy ${o} de Chambas 👋 Recibimos tu solicitud de factura. Para emitirla, ¿me compartes tu Constancia de Situación Fiscal en PDF? Si no la tienes a la mano, también me sirve tu RFC, razón social, código postal, régimen fiscal y el correo al que te la enviamos.` });
     if (x.etapa === "datos") tasks.push({ key:`fac:emi:${x.key}:${String(d.datos_last || d.datos_at || ped).slice(0, 10)}`, acc:x.key, grupo:"Facturas", tipo:"fac_emi", a, peso:-Number(String(d.datos_last || ped).replace(/\D/g, "").slice(0, 12) || 0), facWa:x.wa,
@@ -2355,6 +2393,23 @@ function todoTasks() {
         c.resp_at ? `Ya le contestó una persona el ${esc(fmtShort(mxDate(c.resp_at)))}, pero sigue sin resolverse` : espera != null ? `<span class="${espera >= 4 ? "zero" : "low"}">Lleva ${espera} ${espera === 1 ? "hora" : "horas"} esperando respuesta de una persona</span>` : "",
         `<a href="https://inbox.kapso.ai/projects/${KAPSO_PROJECT}?conversation_id=${encodeURIComponent(id)}" target="_blank" rel="noopener">Abrir el ticket en Kapso</a>`].filter(Boolean) });
   });
+  // 11) Reactivar clientes (Moy): más de 3 meses sin publicar, sin vacantes activas ni plan, y sin quejas en Kapso
+  if (cliRows.length) {
+    const activos = new Set(raw.map(r => r.acc)), conPlanR = new Set(packRows.filter(a => a.status === "active" || a.status === "past_due").map(a => a.acc));
+    cliRows.forEach(c => {
+      if (!c.ultima || activos.has(c.acc) || conPlanR.has(c.acc)) return;
+      if (noContactar[c.acc] || /@chambas\.ai$/i.test(c.email || "")) return;
+      const dias = Math.round((new Date(hoy + "T12:00:00") - new Date(c.ultima + "T12:00:00")) / 864e5);
+      if (dias <= 90) return;
+      if (quejaKapso(c.wa)) return;
+      cliInvertido(c);
+      const puesto = c.ultimaVac || "tu última vacante";
+      tasks.push({ key:`react:${c.acc}:${c.ultima}`, acc:c.acc, fixedOwner:"Moy", grupo:"Reactivar clientes", tipo:"react", a:{ empresa:c.empresa, email:c.email, tel:c.tel, wa:c.wa }, peso:c.invertido,
+        lines:[`<b>${dias}</b> días sin publicar · última vacante: <b>${esc(puesto)}</b> (${esc(fmtShort(c.ultima))})`,
+          `${c.vacantes} ${c.vacantes === 1 ? "vacante publicada" : "vacantes publicadas"} · cliente desde ${esc(fmtShort(c.desde))} · ha invertido ${money(c.invertido)}`],
+        msg:o => `Hola, soy ${o} de Chambas 👋 Ya pasaron ${dias} días desde que publicaste tu última vacante con nosotros (${puesto}). ¿Tienes alguna nueva vacante que quieras cubrir? Con gusto te ayudo a publicarla.` });
+    });
+  }
   // 4 y 5) Seguimiento a los 8 y 15 días del periodo de la vacante (el lunes también entra lo que tocaba el fin de semana)
   const extraFinde = new Date(hoy + "T12:00:00").getDay() === 1 ? 2 : 0;
   raw.forEach(r => {
@@ -2376,8 +2431,9 @@ function todoTasks() {
 }
 const TODO_TIPOS = {
   fac_sol:{ titulo:"Pidieron factura y faltan sus datos", instr:"Pedirles su Constancia de Situación Fiscal (o RFC, razón social, código postal, régimen y correo). Cuando la manden, la tarea pasa sola a “Emitir factura”." },
-  fac_emi:{ titulo:"Emitir factura", instr:"Ya mandaron sus datos fiscales: emitir la factura y enviarla. Al terminar, pica “Marcar emitida” (se actualiza también en la sección Facturas)." },
+  fac_emi:{ titulo:"Emitir factura", instr:"Ya mandaron sus datos fiscales: emitir la factura y enviarla. Al terminar, pica “Marcar emitida”. Si al final no se va a emitir, pica “Marcar no emitida”. Las dos se actualizan también en la sección Facturas." },
   ticket:{ titulo:"Tickets de soporte sin resolver", instr:"Tickets donde el cliente pidió hablar con una persona, quiere cancelar o quiere comprar más, y que siguen sin resolverse. Contestar en Kapso y marcar como hecha cuando quede resuelto." },
+  react:{ titulo:"Clientes sin publicar en más de 3 meses", instr:"Clientes que llevan más de 3 meses sin publicar, no tienen vacantes activas ni plan, y no tienen quejas en Kapso. Escribirles para saber si tienen una nueva vacante que cubrir. El botón de WhatsApp abre con el mensaje escrito." },
   upsell:{ titulo:"Ofrecer el paquete de $2,500", instr:"Clientes que pagan por vacante y: tienen una vacante con más de 40 postulados en sus primeros 10 días, o han publicado más de una vacante con nosotros y tienen una vacante con buen rendimiento (semáforo verde). Ofrecerles el paquete de 5 vacantes por $2,500." },
   pdec:{ titulo:"¿Pautar o no pautar?", instr:"Vacantes con suscripción vigente, publicadas hace más de 48 horas, con 18+ días por delante y bajo rendimiento (menos de 10 postulados, menos de 5 asistencias y 0 contratados). Revisa la vacante y decide: si la quieres pautar, le llega a Marina en “Por pautar”." },
   pack0:{ titulo:"Cuentas sin publicar vacante", instr:"Contactar para presionar a publicar: ayúdales a subir su primera vacante y recuérdales que tienen 5 créditos pagados." },
@@ -2390,10 +2446,13 @@ const TODO_TIPOS = {
 };
 let todoAssigning = false;
 let accOwner = {};
-const ownerOf = t => t.fixedOwner || (t.acc && accOwner[t.acc] && accOwner[t.acc].owner) || (t.d && t.d.owner) || null;
+// solo Rodrigo y Berny pueden ser dueños de una cuenta; Moy solo tiene sus tareas fijas (upsells, reactivar, compras)
+const ejecValido = o => TODO_OWNERS.includes(o);
+const ejecDeCuenta = acc => { const o = acc && accOwner[acc] && accOwner[acc].owner; return ejecValido(o) ? o : null; };
+const ownerOf = t => t.fixedOwner || ejecDeCuenta(t.acc) || (t.d && ejecValido(t.d.owner) ? t.d.owner : null);
 async function todoAssign(tasks) {
   if (!db || todoAssigning) return;
-  const needAcc = tasks.filter(t => t.acc && !t.fixedOwner && !accOwner[t.acc]);
+  const needAcc = tasks.filter(t => t.acc && !t.fixedOwner && !ejecDeCuenta(t.acc));
   const needDoc = tasks.filter(t => !todoDocs[t.key]);
   if (!needAcc.length && !needDoc.length) return;
   todoAssigning = true;
@@ -2404,9 +2463,10 @@ async function todoAssign(tasks) {
   // 1) cada cuenta nueva se queda con un ejecutivo (si ya tenía tareas asignadas, con ese)
   const seen = new Set();
   for (const t of needAcc) {
-    if (seen.has(t.acc) || accOwner[t.acc]) continue; seen.add(t.acc);
-    const prev = Object.entries(todoDocs).map(([k, d]) => ({ k, d })).find(x => tasks.some(tt => tt.acc === t.acc && tt.key === x.k) && x.d.owner);
-    const owner = telOwnerDeCuenta(t.acc) || (prev && prev.d.owner) || (t.prevOwner && load[t.prevOwner] != null ? t.prevOwner : pick());
+    if (seen.has(t.acc) || ejecDeCuenta(t.acc)) continue; seen.add(t.acc);
+    const prev = Object.entries(todoDocs).map(([k, d]) => ({ k, d })).find(x => ejecValido(x.d.owner) && tasks.some(tt => tt.acc === t.acc && !tt.fixedOwner && tt.key === x.k));
+    const telO = telOwnerDeCuenta(t.acc);
+    const owner = (ejecValido(telO) && telO) || (prev && prev.d.owner) || (ejecValido(t.prevOwner) ? t.prevOwner : pick());
     const n = tasks.filter(tt => tt.acc === t.acc && !tt.fixedOwner && !(todoDocs[tt.key] && todoDocs[tt.key].done)).length;
     load[owner] += n;
     accOwner = { ...accOwner, [t.acc]:{ owner, at:hoyMx() } };
@@ -2485,7 +2545,11 @@ function renderTodo(mode = "hoy") {
   if (mode === "atr" && todoFilter === "done") todoFilter = "all";
   const chips = [["all", mode === "atr" ? "Atrasadas" : "Pendientes", open.length], ...TODO_FILTRO_PERSONAS.map(o => [o, o, cntO(o)]), ...(mode === "atr" ? [] : [["done", "Hechas", done.length]])]
     .map(([id, l, n]) => `<button class="rchip${todoFilter === id ? " on" : ""}" data-todof="${esc(id)}">${OWNER_COLOR[id] ? `<span class="dot ${OWNER_COLOR[id]}"></span>` : ""}${l} <b>${n}</b></button>`).join("");
-  const gtabs = TODO_GRUPOS.map(g => `<button aria-pressed="${todoGrupo === g}" data-todog="${esc(g)}">${esc(g)}<span class="n">${show.filter(t => t.grupo === g).length}</span></button>`).join("");
+  // al elegir a una persona, solo se ven las pestañas donde tiene tareas
+  const porPersona = TODO_FILTRO_PERSONAS.includes(todoFilter);
+  const gruposVis = porPersona ? TODO_GRUPOS.filter(g => show.some(t => t.grupo === g)) : TODO_GRUPOS;
+  if (gruposVis.length && !gruposVis.includes(todoGrupo)) todoGrupo = gruposVis[0];
+  const gtabs = gruposVis.map(g => `<button aria-pressed="${todoGrupo === g}" data-todog="${esc(g)}">${esc(g)}<span class="n">${show.filter(t => t.grupo === g).length}</span></button>`).join("");
   const groups = {};
   const subs = TODO_SUBTABS[todoGrupo];
   if (subs && !subs.some(([k]) => k === todoSub)) todoSub = subs[0][0];
@@ -2502,12 +2566,13 @@ function renderTodo(mode = "hoy") {
         ${(t.lines || []).map(l => `<div class="v-mail">${l}</div>`).join("")}
         ${mode === "atr" && d ? (() => { const n = diasHabiles(creadaDe(d), hoyD); return `<div class="small" style="margin-top:3px"><span class="tag ${n >= 3 ? "red" : "orange"}">Pendiente desde ${esc(fmtShort(creadaDe(d)))} · ${n} ${n === 1 ? "día" : "días"} de atraso</span>${t.huerfana ? ' <span class="muted">· ya pasó su ventana, pero sigue sin marcarse</span>' : ""}</div>`; })() : ""}
         ${t.tipo === "pdec" && !isDone ? `<div class="pp-actions" style="margin-top:8px"><button class="btn-primary" data-pdec="si" data-key="${esc(t.key)}">La quiero pautar</button><button class="end-btn" data-pdec="no" data-key="${esc(t.key)}">No la quiero pautar</button></div>` : ""}
-        ${t.tipo === "fac_emi" && !isDone ? `<div class="pp-actions" style="margin-top:8px"><button class="btn-primary" data-facemit="${esc(t.key)}">Marcar emitida</button></div>` : ""}
+        ${(t.tipo === "fac_emi" || t.tipo === "fac_sol") && !isDone ? `<div class="pp-actions" style="margin-top:8px">${t.tipo === "fac_emi" ? `<button class="btn-primary" data-facemit="${esc(t.key)}">Marcar emitida</button>` : ""}<button class="end-btn" data-facnoemit="${esc(t.key)}" title="Se solicitó pero no se va a emitir">Marcar no emitida</button></div>` : ""}
         ${t.tipo === "pdec" && isDone ? `<div class="vs" style="text-align:left">${d.decision === "si" ? "Pedida para pautar" : "Decidió no pautarla"}</div>` : ""}
         ${t.msg && !isDone ? `<details class="todo-msg"><summary>Ver mensaje sugerido</summary><div>${esc(t.msg(t.owner || "tu ejecutivo"))}</div><button class="linkbtn small" data-copymsg="${esc(t.key)}">Copiar</button></details>` : ""}
         ${isDone ? `<div class="vs" style="text-align:left">Hecha ${esc(d.doneAt ? fmtShort(d.doneAt.slice(0, 10)) + ", " + d.doneAt.slice(11, 16) : "")}</div>` : ""}
       </div>
-      ${t.fixedOwner ? `<span class="tag ${OWNER_COLOR[t.owner] || "gray"}" title="Esta tarea siempre la atiende ${esc(t.owner)}">${esc(t.owner)}</span>` : t.owner ? `<button class="tag ${OWNER_COLOR[t.owner] || "gray"}" data-todoreasig="${esc(t.key)}" data-todoacc="${esc(t.acc || "")}" title="Clic para pasar la cuenta (con todas sus tareas) al otro ejecutivo">${esc(t.owner)}</button>` : '<span class="muted small">asignando…</span>'}
+      ${notaBtn(t.acc, a, t.owner).replace("data-notaaut", `data-notaorig="${esc((TODO_TIPOS[t.tipo] || {}).titulo || "")}" data-notaaut`)}
+      ${t.fixedOwner ? `<span class="tag ${OWNER_COLOR[t.owner] || "gray"}" title="Esta tarea siempre la atiende ${esc(t.owner)}">${esc(t.owner)}</span>${ejecDeCuenta(t.acc) && ejecDeCuenta(t.acc) !== t.owner ? `<div class="vs" style="text-align:right;white-space:nowrap" title="Ejecutivo de la cuenta en soporte">soporte: ${tag(ejecDeCuenta(t.acc), OWNER_COLOR[ejecDeCuenta(t.acc)] || "gray")}</div>` : ""}` : t.owner ? `<button class="tag ${OWNER_COLOR[t.owner] || "gray"}" data-todoreasig="${esc(t.key)}" data-todoacc="${esc(t.acc || "")}" title="Clic para pasar la cuenta (con todas sus tareas) al otro ejecutivo">${esc(t.owner)}</button>` : '<span class="muted small">asignando…</span>'}
     </div>`;
   };
   const html = Object.entries(groups).map(([g, tipos]) => `<div class="todo-group">${Object.entries(tipos).map(([tp, arr]) => `<div class="todo-type"><div class="todo-type-h"><b>${esc(TODO_TIPOS[tp].titulo)}</b> <span class="muted">· ${arr.length}</span></div><div class="todo-instr">${esc(TODO_TIPOS[tp].instr)}</div>${arr.map(item).join("")}</div>`).join("")}</div>`).join("");
@@ -2605,7 +2670,7 @@ async function classifyPendingTickets() {
 function tkOwner(ph) {
   const r = raw.find(v => normPh(v.wa) === ph);
   const acc = (r && r.acc) || (riskRows.find(a => normPh(a.wa) === ph) || {}).acc;
-  const o = (acc && accOwner[acc] && accOwner[acc].owner) || (accOwner["tel:" + ph] && accOwner["tel:" + ph].owner);
+  const o = ejecDeCuenta(acc) || ejecDeCuenta("tel:" + ph);
   return { acc, owner:o || null, empresa:(r && r.empresa) || (riskByAcc[acc] || {}).empresa || "" };
 }
 // dueño al azar para tickets sin ejecutivo; se guarda para que siempre sea el mismo
@@ -2618,7 +2683,7 @@ async function assignTicketOwners(rows) {
   const hechos = new Set();
   for (const t of pend) {
     const k = t.acc || ("tel:" + t.ph);
-    if (hechos.has(k) || accOwner[k]) continue; hechos.add(k);
+    if (hechos.has(k) || ejecDeCuenta(k)) continue; hechos.add(k);
     const owner = TODO_OWNERS[Math.floor(Math.random() * TODO_OWNERS.length)];
     accOwner = { ...accOwner, [k]:{ owner, at:hoyMx(), origen:"ticket" } };
     try { await db.collection("todo_owner").doc(k).set(accOwner[k]); } catch (_) {}
@@ -2731,16 +2796,20 @@ function parseVentas(wb, XLSX, Y, M) {
   const grid = XLSX.utils.sheet_to_json(wb.Sheets[name], { header:1, raw:true, defval:null });
   const head = (grid[0] || []).map(h => norm(h || ""));
   const col = k => head.findIndex(h => h.startsWith(k));
-  const cF = col("fecha") >= 0 ? col("fecha") : 0, cC = col("cliente"), cM = col("monto"), cT = col("tipo");
+  const cF = col("fecha") >= 0 ? col("fecha") : 0, cC = col("cliente"), cM = col("monto"), cT = col("tipo"), cMe = col("metodo");
   const out = [];
   for (let i = 1; i < grid.length; i++) {
     const r = grid[i]; if (!r || !r[cC]) continue;
     const d = fechaHoja(r[cF], Y, M);
     if (!d || d.slice(0, 7) !== `${Y}-${String(M).padStart(2, "0")}`) continue;
-    out.push({ d, cliente:String(r[cC]).trim(), monto:num(r[cM]), tipo:String(r[cT] || "").trim() });
+    out.push({ d, cliente:String(r[cC]).trim(), monto:num(r[cM]), tipo:String(r[cT] || "").trim(), metodo:cMe >= 0 ? normMetodo(r[cMe]) : "" });
   }
   return out;
 }
+// método de pago: Stripe, Transferencia u Oxxo (como viene en la hoja Revenue)
+function normMetodo(v) { const t = String(v == null ? "" : v).trim(); if (/stripe|tarjeta/i.test(t)) return "Stripe"; if (/transfer/i.test(t)) return "Transferencia"; if (/oxxo/i.test(t)) return "Oxxo"; return /^[a-záéíóúñ ]{3,}$/i.test(t) ? t : ""; }
+const METODO_COLOR = { Stripe:"purple", Transferencia:"blue", Oxxo:"orange" };
+const metodoTag = m => m ? `<span class="tag ${METODO_COLOR[m] || "gray"}" title="Método de pago">${esc(m)}</span>` : "";
 const MES_HOJA = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 async function loadSheet(fresh = false) {
   if (!mcp) { sheetState = "error"; sheetErr = "sin conectores"; return; }
@@ -2769,18 +2838,32 @@ async function loadSheet(fresh = false) {
       const d = fechaHoja(a, Y, M);
       if (!d || d.slice(0, 7) !== `${Y}-${String(M).padStart(2, "0")}`) continue;
       const est = String(r[cE] || "").toUpperCase().trim();
-      out.push({ fila:i + 1, d, cliente:String(cli).trim(), monto:num(r[cM]), metodo:r[cMet] == null ? "" : String(r[cMet]), estatus:est, comentario:r[cCom] == null ? "" : String(r[cCom]) });
+      out.push({ fila:i + 1, d, cliente:String(cli).trim(), monto:num(r[cM]), metodo:normMetodo(r[cMet]), estatus:est, comentario:r[cCom] == null ? "" : String(r[cCom]) });
     }
     sheetRows = out; sheetTab = name; sheetAt = Date.now(); sheetState = "ok"; sheetErr = "";
+    try {
+      const tot = {};
+      wb.SheetNames.forEach(nm => { const m = norm(nm).match(/^(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(\d{4})$/); if (!m) return;
+        const Mi = MES_HOJA.findIndex(x => norm(x) === m[1]) + 1;
+        parseVentas(wb, XLSX, Number(m[2]), Mi).forEach(v => { const k = v.cliente.toLowerCase(); const t = tot[k] || (tot[k] = { monto:0, pagos:0, ultimo:"", metodo:"", metodos:{} }); t.monto += v.monto; t.pagos++; if (v.metodo) t.metodos[v.metodo] = (t.metodos[v.metodo] || 0) + 1; if (v.d >= t.ultimo) { t.ultimo = v.d; if (v.metodo) t.metodo = v.metodo; } }); });
+      sheetTotales = tot;
+    } catch (_) {}
     const Mp = M === 1 ? 12 : M - 1, Yp = M === 1 ? Y - 1 : Y;
     try { sheetVentas = [...parseVentas(wb, XLSX, Y, M), ...parseVentas(wb, XLSX, Yp, Mp)]; } catch (_) { sheetVentas = []; }
   } catch (e) { sheetState = "error"; sheetErr = (e && (e.code || e.message)) || "error"; }
   render();
 }
 // convierte las filas de la hoja al formato del resumen
+// último método de pago conocido del cliente (pestañas mensuales y, si no, la de renovaciones)
+function metodoDe(email) {
+  const k = String(email || "").toLowerCase(); if (!k) return "";
+  if (sheetTotales[k] && sheetTotales[k].metodo) return sheetTotales[k].metodo;
+  const r = (sheetRows || []).filter(x => x.cliente.toLowerCase() === k && x.metodo).sort((a, b) => b.d.localeCompare(a.d))[0];
+  return r ? r.metodo : "";
+}
 function sheetToRenov(d0, d1) {
   // Renovado = pestaña del mes (tipo de pago "Renovación" o "Upsell"); pendientes y cancelaciones = pestaña de renovaciones
-  const cobros = sheetVentas.filter(v => v.d >= d0 && v.d < d1 && /renovaci|upsell/i.test(v.tipo)).map((v, i) => ({ fila:"v" + i, d:v.d, cliente:v.cliente, monto:v.monto, metodo:v.tipo, estatus:"PAGADO", comentario:"" }));
+  const cobros = sheetVentas.filter(v => v.d >= d0 && v.d < d1 && /renovaci|upsell/i.test(v.tipo)).map((v, i) => ({ fila:"v" + i, d:v.d, cliente:v.cliente, monto:v.monto, metodo:v.metodo, tipoPago:v.tipo, estatus:"PAGADO", comentario:"" }));
   const lista = (sheetRows || []).filter(x => x.d >= d0 && x.d < d1 && x.estatus !== "PAGADO");
   return [...cobros, ...lista].map(x => {
     const mail = x.cliente.toLowerCase();
@@ -2788,12 +2871,147 @@ function sheetToRenov(d0, d1) {
     const a = r ? riskByAcc[r.acc] : riskRows.find(z => (z.email || "").toLowerCase() === mail);
     const estado = x.estatus === "PAGADO" ? "renovado" : x.estatus === "NO RENUEVA" ? "cancelada" : "pendiente";
     return { tipo:"hoja", pid:`hoja:${x.fila}`, acc:(r && r.acc) || (a && a.acc) || "", empresa:(r && r.empresa) || (a && a.empresa) || x.cliente, email:x.cliente,
-      detalle:x.estatus === "PAGADO" ? `${x.metodo}${x.monto === 2500 ? " · Plan de créditos" : ""}` : `${x.monto === 2500 ? "Plan de créditos" : x.monto >= 5000 ? "Pack de vacantes" : "Vacante"} · ${x.metodo || "sin método"}`, amount:x.monto, due:x.d, hora:"", renov_at:estado === "renovado" ? x.d : null, estado, motivo:x.comentario, fila:x.fila };
+      metodo:x.metodo || metodoDe(x.cliente),
+      detalle:x.estatus === "PAGADO" ? `${x.tipoPago || "Renovación"}${x.monto === 2500 ? " · Plan de créditos" : ""}` : `${x.monto === 2500 ? "Plan de créditos" : x.monto >= 5000 ? "Pack de vacantes" : "Vacante"}`, amount:x.monto, due:x.d, hora:"", renov_at:estado === "renovado" ? x.d : null, estado, motivo:x.comentario, fila:x.fila };
   });
 }
 const sheetNote = () => sheetState === "ok" ? `<div class="small muted" style="margin-top:10px">Fuente: hoja <b>Revenue › ${esc(sheetTab)}</b> · leída ${esc(ago(sheetAt))} · <a href="https://docs.google.com/spreadsheets/d/${REV_SHEET_ID}/edit" target="_blank" rel="noopener">abrir hoja</a></div>`
   : sheetState === "loading" ? `<div class="note">Leyendo la hoja de Revenue…</div>`
   : sheetState === "error" ? `<div class="note">No se pudo leer la hoja de Revenue (${esc(sheetErr)}). Estás viendo el cálculo con datos del sistema, que puede no cuadrar. Revisa que Google Drive esté conectado y vuelve a intentar. <button class="linkbtn" data-sheetretry>Reintentar</button></div>` : "";
+
+// ---------- Notas por cliente + Insights › Clientes ----------
+let notas = {}, notaOpen = null, cliRows = [], cliState = "idle", cliSort = "invertido", sheetTotales = {};
+const NOTA_AUTORES = ["Rodrigo", "Berny", "Moy", "Marina"];
+function notasDe(acc, email, tel) {
+  const em = String(email || "").toLowerCase(), ph = normPh(tel || "");
+  return Object.entries(notas).map(([id, n]) => ({ id, ...n })).filter(n => (acc && n.acc === acc) || (em && String(n.email || "").toLowerCase() === em) || (ph && normPh(n.tel || "") === ph))
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+function notaBtn(acc, a, defAutor) {
+  const n = notasDe(acc, a.email, a.wa || a.tel).length;
+  return `<button class="nota-btn" title="Notas del cliente" data-nota="${esc(acc || "")}" data-notaemp="${esc(a.empresa || "")}" data-notamail="${esc(a.email || "")}" data-notatel="${esc(a.wa || a.tel || "")}" data-notaaut="${esc(defAutor || "")}">✏️${n ? `<span>${n}</span>` : ""}</button>`;
+}
+function renderNotaModal() {
+  if (!notaOpen) return "";
+  const o = notaOpen, lista = notasDe(o.acc, o.email, o.tel);
+  const c0 = cliRows.find(x => x.acc === o.acc) || null; const c = c0 ? cliInvertido(c0) : null;
+  const stats = c ? `<div class="nm-stats">
+      <div><span>Vacantes publicadas</span><b>${c.vacantes}</b></div>
+      <div><span>En ChambasAI</span><b>${esc(c.antig)}</b><small>desde ${esc(fmtShort(c.desde))}</small></div>
+      <div><span>Última publicación</span><b>${esc(fmtShort(c.ultima))}</b></div>
+      <div><span>Ha invertido</span><b>${money(c.invertido)}</b><small>${c.fuenteInv}</small></div>
+      <div><span>Método de pago</span><b>${c.metodo ? metodoTag(c.metodo) : "—"}</b><small>${Object.entries(c.metodos || {}).map(([m, n]) => `${m}: ${n}`).join(" · ")}</small></div>
+    </div>` : "";
+  return `<div class="nm-ov" data-notaclose="1"><div class="nm" role="dialog" aria-label="Notas del cliente">
+    <div class="nm-h"><div><div class="nm-t">${esc(o.empresa || o.email || "Cliente")}</div><div class="v-mail">${esc(o.email || "")}${o.tel ? " · " + esc(fmtTelRaw(o.tel)) : ""}</div></div><button class="nm-x" data-notaclose="1" aria-label="Cerrar">✕</button></div>
+    ${stats}
+    <div class="nm-new">
+      <textarea id="nota-txt" rows="3" placeholder="Escribe una nota sobre el cliente…"></textarea>
+      <div class="nm-row"><label class="small muted">Escribe: <select id="nota-aut">${NOTA_AUTORES.map(x => `<option${x === (o.autor || localStorage_get("crm_autor") || "Marina") ? " selected" : ""}>${x}</option>`).join("")}</select></label><button class="btn-primary" data-notasave="1">Guardar nota</button></div>
+    </div>
+    <div class="nm-list">${lista.length ? lista.map(n => `<div class="nm-n"><div class="nm-meta">${tag(n.autor || "—", OWNER_COLOR[n.autor] || "gray")} <span class="muted small">${esc(fmtShort(String(n.at).slice(0, 10)))}, ${esc(String(n.at).slice(11, 16))}${n.origen ? " · " + esc(n.origen) : ""}</span></div><div class="nm-txt">${esc(n.texto)}</div></div>`).join("") : '<div class="muted small">Todavía no hay notas de este cliente.</div>'}</div>
+  </div></div>`;
+}
+const localStorage_get = k => { try { return localStorage.getItem(k); } catch (_) { return null; } };
+const fmtTelRaw = t => { const d = normPh(t); return d.length === 12 && d.startsWith("52") ? `+52 ${d.slice(2, 4)} ${d.slice(4, 8)} ${d.slice(8)}` : "+" + d; };
+function abrirNota(el) {
+  notaOpen = { acc:el.dataset.nota || "", empresa:el.dataset.notaemp || "", email:el.dataset.notamail || "", tel:el.dataset.notatel || "", autor:el.dataset.notaaut || "", origen:el.dataset.notaorig || "" };
+  pintarNota();
+}
+function pintarNota() {
+  let box = document.getElementById("nota-root");
+  if (!box) { box = document.createElement("div"); box.id = "nota-root"; document.body.appendChild(box); }
+  const prev = document.getElementById("nota-txt"); const keep = prev ? prev.value : "";
+  box.innerHTML = renderNotaModal();
+  const ta = document.getElementById("nota-txt"); if (ta) { ta.value = keep; if (!keep) ta.focus(); }
+}
+async function guardarNota() {
+  const ta = document.getElementById("nota-txt"); const texto = (ta && ta.value || "").trim();
+  if (!texto || !db || !notaOpen) return;
+  const autor = document.getElementById("nota-aut").value;
+  try { localStorage.setItem("crm_autor", autor); } catch (_) {}
+  const o = notaOpen, id = `${(o.acc || o.email || o.tel || "x").replace(/[^\w@.:-]/g, "")}:${Date.now()}`;
+  const doc = { acc:o.acc, empresa:o.empresa, email:o.email, tel:normPh(o.tel || ""), texto:texto.slice(0, 4000), autor, at:hoyMx(), origen:o.origen || "" };
+  notas = { ...notas, [id]:doc }; ta.value = ""; pintarNota(); render();
+  try { await db.collection("notas").doc(id).set(doc); toast("Nota guardada"); } catch (_) { const n = { ...notas }; delete n[id]; notas = n; pintarNota(); toast("No se guardó la nota"); }
+}
+// --- Clientes
+const CLI_SQL = `WITH accs AS (
+  SELECT COALESCE(u."adminId", u.id) acc, v.id vid, v.created_at, v."companyId" cid
+  FROM vacancy v JOIN "user" u ON u.id = v."userId"
+  WHERE v.deleted_at IS NULL AND COALESCE(v.is_external, false) = false AND v.job_type = 'traditional'
+),
+pagadas AS (SELECT DISTINCT a.vid FROM accs a JOIN vacancy_payment vp ON vp.vacancy_id = a.vid AND vp.deleted_at IS NULL AND vp.status IN ('active', 'paid', 'expired', 'cancelled')),
+vac AS (SELECT a.acc, COUNT(*) n, MIN(a.created_at) primera, MAX(a.created_at) ultima FROM accs a JOIN pagadas p ON p.vid = a.vid GROUP BY 1),
+pay AS (SELECT a.acc, SUM(vp.amount) monto, MIN(vp.created_at) primero FROM vacancy_payment vp JOIN accs a ON a.vid = vp.vacancy_id WHERE vp.deleted_at IS NULL AND vp.status IN ('active', 'paid', 'expired', 'cancelled') AND vp.plan_type <> 'subscription_credit' GROUP BY 1),
+sub AS (SELECT s.owner_user_id acc, SUM(COALESCE((l.metadata->>'amount_paid')::float, 0)) monto, MIN(l.created_at) primero FROM subscription_credit_ledger l JOIN subscription_credit_accounts s ON s.id = l.account_id WHERE l.reason IN ('subscription_renewal', 'early_renewal') GROUP BY 1)
+SELECT vac.acc::text acc, o.email, o.lada, o.phone,
+  (SELECT c.name FROM accs a2 JOIN company c ON c.id = a2.cid WHERE a2.acc = vac.acc ORDER BY a2.created_at DESC LIMIT 1) empresa,
+  vac.n::int vacantes,
+  to_char(vac.primera, 'YYYY-MM-DD') primera_vac, to_char(pay.primero, 'YYYY-MM-DD') primer_pago, to_char(sub.primero, 'YYYY-MM-DD') primer_plan,
+  to_char(vac.ultima, 'YYYY-MM-DD') ultima,
+  (SELECT COALESCE(vs.title, vv.name) FROM accs a3 JOIN pagadas p3 ON p3.vid = a3.vid JOIN vacancy vv ON vv.id = a3.vid LEFT JOIN vacancy_structured vs ON vs.vacancy_id::text = vv.id::text WHERE a3.acc = vac.acc ORDER BY a3.created_at DESC LIMIT 1) ultima_vac,
+  (COALESCE(pay.monto, 0) + COALESCE(sub.monto, 0))::float invertido_db
+FROM vac JOIN "user" o ON o.id = vac.acc LEFT JOIN pay ON pay.acc = vac.acc LEFT JOIN sub ON sub.acc = vac.acc`;
+function antiguedad(desde) {
+  if (!desde) return "—";
+  const d0 = new Date(desde + "T12:00:00"), d1 = new Date(localToday() + "T12:00:00");
+  const m = (d1.getFullYear() - d0.getFullYear()) * 12 + d1.getMonth() - d0.getMonth() - (d1.getDate() < d0.getDate() ? 1 : 0);
+  if (m < 1) { const dd = Math.max(0, Math.round((d1 - d0) / 864e5)); return `${dd} ${dd === 1 ? "día" : "días"}`; }
+  if (m < 12) return `${m} ${m === 1 ? "mes" : "meses"}`;
+  const y = Math.floor(m / 12), r = m % 12; return `${y} ${y === 1 ? "año" : "años"}${r ? ` ${r} ${r === 1 ? "mes" : "meses"}` : ""}`;
+}
+async function loadClientes(fresh = false) {
+  if (!mcp) { cliState = "error"; render(); return; }
+  cliState = "loading"; render();
+  if (sheetState === "idle") loadSheet();
+  try {
+    const res = await mcp.callTool(SERVER, TOOL, { query:CLI_SQL, max_rows:20000 }, { cache:{ staleTime:30 * 60 * 1000, gcTime:24 * 3600 * 1000, refresh:fresh } });
+    let p = res.payload; if (typeof p === "string") { try { p = JSON.parse(p); } catch (_) {} }
+    if (!Array.isArray(p)) throw { code:"tool_error" };
+    cliRows = p.map(x => {
+      const desde = [x.primera_vac, x.primer_pago, x.primer_plan].filter(Boolean).sort()[0] || "";
+      return { acc:x.acc, email:String(x.email || "").toLowerCase(), empresa:String(x.empresa || x.email || "Sin nombre").trim(), wa:waNum(x.lada, x.phone), tel:fmtTel(x.lada, x.phone),
+        vacantes:num(x.vacantes), desde, antig:antiguedad(desde), ultima:x.ultima || "", ultimaVac:String(x.ultima_vac || "").trim(), invertidoDb:num(x.invertido_db) };
+    });
+    cliState = "ok";
+  } catch (e) { cliState = "error"; }
+  render();
+}
+function cliInvertido(c) {
+  const s = sheetTotales[c.email];
+  c.metodo = metodoDe(c.email);
+  c.metodos = s ? s.metodos : {};
+  if (s && s.monto > 0) { c.invertido = s.monto; c.fuenteInv = `hoja Revenue · ${s.pagos} ${s.pagos === 1 ? "pago" : "pagos"}`; }
+  else { c.invertido = c.invertidoDb; c.fuenteInv = "según pagos del sistema"; }
+  return c;
+}
+function renderClientes() {
+  if (cliState === "idle") loadClientes();
+  if ((cliState === "loading" || cliState === "idle") && !cliRows.length) return skeleton();
+  if (cliState === "error" && !cliRows.length) return `<div class="state"><b>No se pudieron cargar los clientes</b><button data-cliretry>Intentar de nuevo</button></div>`;
+  const q = query.trim().toLowerCase();
+  const rows = cliRows.map(cliInvertido).filter(c => !q || `${c.empresa} ${c.email} ${c.wa}`.toLowerCase().includes(q));
+  const sorters = { invertido:(a, b) => b.invertido - a.invertido, vacantes:(a, b) => b.vacantes - a.vacantes, ultima:(a, b) => String(b.ultima).localeCompare(String(a.ultima)), desde:(a, b) => String(a.desde).localeCompare(String(b.desde)), notas:(a, b) => notasDe(b.acc, b.email, b.wa).length - notasDe(a.acc, a.email, a.wa).length, metodo:(a, b) => String(a.metodo || "zz").localeCompare(String(b.metodo || "zz")), empresa:(a, b) => a.empresa.localeCompare(b.empresa, "es") };
+  rows.sort(sorters[cliSort] || sorters.invertido);
+  const th = (k, l, cls = "") => `<th class="${cls}"><button data-clisort="${k}"${cliSort === k ? ' style="color:var(--text)"' : ""}>${l}${cliSort === k ? " ↓" : ""}</button></th>`;
+  const body = rows.slice(0, 500).map(c => { const nn = notasDe(c.acc, c.email, c.wa).length; return `<tr class="cli-row" data-nota="${esc(c.acc)}" data-notaemp="${esc(c.empresa)}" data-notamail="${esc(c.email)}" data-notatel="${esc(c.wa)}">
+      <td><div class="v-name">${esc(c.empresa)}</div></td>
+      <td class="small">${esc(c.email)}</td>
+      <td class="small" style="white-space:nowrap">${esc(c.tel || "—")}</td>
+      <td class="num">${c.vacantes}</td>
+      <td class="small">${esc(c.antig)}<div class="vs" style="text-align:left">desde ${esc(fmtShort(c.desde))}</div></td>
+      <td class="small">${esc(fmtShort(c.ultima))}</td>
+      <td>${metodoTag(c.metodo) || '<span class="muted small">—</span>'}</td>
+      <td class="num"><b>${money(c.invertido)}</b></td>
+      <td class="num">${nn ? `<span class="tag blue">✏️ ${nn}</span>` : '<span class="muted">—</span>'}</td>
+    </tr>`; }).join("");
+  const tot = rows.reduce((s, c) => s + c.invertido, 0);
+  return `<div class="small muted" style="margin-top:14px">${rows.length} clientes · ${money(tot)} invertidos en total · pica un cliente para ver y escribir notas</div>
+    <div class="tablewrap" style="margin-top:8px"><table style="min-width:1000px"><thead><tr>${th("empresa", "Empresa")}<th><button>Correo</button></th><th><button>Teléfono</button></th>${th("vacantes", "Vacantes", "num")}${th("desde", "En ChambasAI")}${th("ultima", "Última publicación")}${th("metodo", "Método de pago")}${th("invertido", "Invertido", "num")}${th("notas", "Notas", "num")}</tr></thead><tbody>${body}</tbody></table></div>
+    ${rows.length > 500 ? `<div class="foot">Se muestran los primeros 500; usa el buscador para encontrar a cualquier cliente.</div>` : ""}
+    <div class="foot">Clientes = cuentas con al menos una vacante pagada · invertido = suma de sus cobros en las pestañas mensuales de la hoja Revenue (si no aparece ahí, la suma de sus pagos en el sistema) · en ChambasAI = desde su primera vacante o pago</div>`;
+}
 
 function renderDayPanel() {
   const el = $("panel");
@@ -2863,6 +3081,10 @@ function visible() {
 }
 
 function render() {
+  try { renderInner(); }
+  catch (e) { console.error(e); const c = document.getElementById("content"); if (c) c.insertAdjacentHTML("afterbegin", `<div class="note" style="border-color:#e03e3e">Error al mostrar esta vista: ${esc(String(e && e.message || e))} <span class="muted">(${esc(String(e && e.stack || "").split("\n")[1] || "").trim()})</span></div>`); }
+}
+function renderInner() {
   if (typeof renderUpdated === "function" && autoRun) renderUpdated();
   const all = rows();
   if (section === "pauta" && filterId === "notpaid") filterId = "all";
@@ -2877,9 +3099,9 @@ function render() {
   if (loadState === "loading" && !raw.length) { $("content").innerHTML = skeleton(); return; }
   if (section === "sop") { if (riskState === "idle") { loadRisk(); return; } $("content").innerHTML = renderSoporte(); return; }
   if (section === "fact") { if (riskState === "idle") { loadRisk(); return; } $("content").innerHTML = renderFacturas(); return; }
-  if (section === "todo") { const nAtr = (packRows.length || riskRows.length) ? todoAtrasadas().length : 0; const nPP = Object.values(pautaReq).filter(x => x.decision === "si" && x.estado === "pendiente").length; $("seg").innerHTML = `<button aria-pressed="${todoView === "hoy"}" data-todoview="hoy">Tareas de hoy</button><button aria-pressed="${todoView === "pp"}" data-todoview="pp">Por pautar<span class="n">${nPP}</span></button><button aria-pressed="${todoView === "atr"}" data-todoview="atr">Días anteriores<span class="n ${nAtr ? "zero" : ""}">${nAtr}</span></button><button aria-pressed="${todoView === "prog"}" data-todoview="prog">Progreso</button>`; if (todoView === "pp") { $("content").innerHTML = renderPorPautar(); return; } if (packState === "idle") loadPack(); if (riskState === "idle") loadRisk(); loadHistVacs(); loadPost10(); if (tkState === "idle") loadTickets(); if (quejasState === "idle") loadQuejas(); if (cohState === "idle") loadCoh(); if (cancelState === "idle") loadCancels(); else if (cancelState === "ok") loadCancelContacts(); if (todoView === "prog") { $("content").innerHTML = renderProgreso(); return; } if (todoView === "atr") { $("content").innerHTML = renderTodo("atr"); return; } $("content").innerHTML = renderTodo(); return; }
-  if (section === "ins") $("seg").innerHTML = [["canc90", "Cancelaciones · 90 días"], ["canc30", "Cancelaciones · 30 días"], ["cancres", "Cancelaciones · 90 vs 30"], ["resp", "Tiempo de respuesta"]].map(([id, l]) => `<button aria-pressed="${insView === id}" data-insview="${id}">${l}</button>`).join("");
-  if (section === "ins") { if (cancDState === "idle") loadCancData(); $("content").innerHTML = insView === "resp" ? renderRespuesta() : insView === "cancres" ? renderCancResumen() : renderCancelaciones(insView === "canc30" ? 30 : 90); if (openId) renderPanel(); return; }
+  if (section === "todo") { const nAtr = (packRows.length || riskRows.length) ? todoAtrasadas().length : 0; const nPP = Object.values(pautaReq).filter(x => x.decision === "si" && x.estado === "pendiente").length; $("seg").innerHTML = `<button aria-pressed="${todoView === "hoy"}" data-todoview="hoy">Tareas de hoy</button><button aria-pressed="${todoView === "pp"}" data-todoview="pp">Por pautar<span class="n">${nPP}</span></button><button aria-pressed="${todoView === "atr"}" data-todoview="atr">Días anteriores<span class="n ${nAtr ? "zero" : ""}">${nAtr}</span></button><button aria-pressed="${todoView === "prog"}" data-todoview="prog">Progreso</button>`; if (todoView === "pp") { $("content").innerHTML = renderPorPautar(); return; } if (packState === "idle") loadPack(); if (riskState === "idle") loadRisk(); loadHistVacs(); loadPost10(); if (cliState === "idle") loadClientes(); if (tkState === "idle") loadTickets(); if (quejasState === "idle") loadQuejas(); if (cohState === "idle") loadCoh(); if (cancelState === "idle") loadCancels(); else if (cancelState === "ok") loadCancelContacts(); if (todoView === "prog") { $("content").innerHTML = renderProgreso(); return; } if (todoView === "atr") { $("content").innerHTML = renderTodo("atr"); return; } $("content").innerHTML = renderTodo(); return; }
+  if (section === "ins") $("seg").innerHTML = [["canc90", "Cancelaciones · 90 días"], ["canc30", "Cancelaciones · 30 días"], ["cancres", "Cancelaciones · 90 vs 30"], ["resp", "Tiempo de respuesta"], ["clientes", "Clientes"]].map(([id, l]) => `<button aria-pressed="${insView === id}" data-insview="${id}">${l}</button>`).join("");
+  if (section === "ins") { if (cancDState === "idle") loadCancData(); $("content").innerHTML = insView === "clientes" ? renderClientes() : insView === "resp" ? renderRespuesta() : insView === "cancres" ? renderCancResumen() : renderCancelaciones(insView === "canc30" ? 30 : 90); if (openId) renderPanel(); return; }
   if (section === "cal" && calView === "pack") {
     if (riskState === "idle") loadRisk();
     const sw = `<div class="seg2">${[["seg", "Seguimiento"], ["coh", "Cohortes"]].map(([id, l]) => `<button aria-pressed="${packView === id}" data-packview="${id}">${l}</button>`).join("")}</div>`;
@@ -3073,6 +3295,7 @@ async function initDb() {
   if (!db) return;
   let ready = false;
   const timer = setTimeout(() => { if (!ready) { dbNote = "Las marcas de pauta aún no cargan; pueden estar desactualizadas."; render(); } }, 10000);
+  db.collection("notas").onSnapshot(snap => { const n = {}; snap.docs.forEach(d => { const v = d.data(); if (v) n[d.id] = v; }); notas = n; if (notaOpen) pintarNota(); render(); }, () => {});
   db.collection("tickets").onSnapshot(snap => { const n = {}; snap.docs.forEach(d => { const v = d.data(); if (v) n[d.id] = v; }); tkCls = { ...n, ...Object.fromEntries(Object.entries(tkCls).filter(([k, v]) => !n[k] || (n[k].at || 0) < (v.at || 0))) }; render(); }, () => {});
   db.collection("pauta_req").onSnapshot(snap => { const n = {}; snap.docs.forEach(d => { const v = d.data(); if (v) n[d.id] = v; }); pautaReq = n; render(); }, () => {});
   db.collection("todo_owner").onSnapshot(snap => { const n = {}; snap.docs.forEach(d => { const v = d.data(); if (v) n[d.id] = v; }); accOwner = n; render(); }, () => {});
@@ -3116,6 +3339,7 @@ document.addEventListener("click", e => {
   const ts_ = t.closest("[data-todosub]"); if (ts_) { todoSub = ts_.dataset.todosub; render(); return; }
   const pw_ = t.closest("[data-progw]"); if (pw_) { progWeek = Number(pw_.dataset.progw); render(); return; }
   const tv_ = t.closest("[data-todoview]"); if (tv_) { todoView = tv_.dataset.todoview; render(); return; }
+  const fn_ = t.closest("[data-facnoemit]"); if (fn_) { const tk = todoTasks().find(x => x.key === fn_.dataset.facnoemit); if (tk) { setNoEmitida(tk.facWa, true); todoToggle(tk.key, true); } return; }
   const fe_ = t.closest("[data-facemit]"); if (fe_) { const tk = todoTasks().find(x => x.key === fe_.dataset.facemit); if (tk) { setEmitida(tk.facWa, true); todoToggle(tk.key, true); } return; }
   const pd_ = t.closest("[data-pdec]"); if (pd_) { const tk = todoTasks().find(x => x.key === pd_.dataset.key); if (tk) decidirPauta(tk, pd_.dataset.pdec === "si"); return; }
   const pok = t.closest("[data-ppok]"); if (pok) { resolverPauta(pok.dataset.ppok, true); return; }
@@ -3135,6 +3359,12 @@ document.addEventListener("click", e => {
   if (t.closest("[data-cancelmes]")) { openCancelHoy(cancelMes, "Cancelaron este mes"); return; }
   const rc = t.closest("[data-recover]"); if (rc) { setRecuperado(rc.dataset.recover, true); return; }
   const urc = t.closest("[data-unrecover]"); if (urc) { setRecuperado(urc.dataset.unrecover, false); return; }
+  if (t.closest("[data-notasave]")) { guardarNota(); return; }
+  if (t.closest("[data-notaclose]") && (t.classList.contains("nm-ov") || t.closest(".nm-x"))) { notaOpen = null; pintarNota(); return; }
+  if (t.closest(".nm")) return;
+  const nb_ = t.closest("[data-nota]"); if (nb_ && (nb_.classList.contains("nota-btn") || nb_.classList.contains("cli-row"))) { abrirNota(nb_); return; }
+  const cs_ = t.closest("[data-clisort]"); if (cs_) { cliSort = cs_.dataset.clisort; render(); return; }
+  if (t.closest("[data-cliretry]")) { loadClientes(true); return; }
   const rtr_ = t.closest("[data-rtr]"); if (rtr_) { rtRange = rtr_.dataset.rtr; render(); return; }
   const tkr_ = t.closest("[data-tkr]"); if (tkr_) { tkRange = tkr_.dataset.tkr; tkFiltro = null; render(); return; }
   const tkf_ = t.closest("[data-tkf]"); if (tkf_) { tkFiltro = tkFiltro === tkf_.dataset.tkf || tkf_.dataset.tkf === "noop" ? null : tkf_.dataset.tkf; render(); return; }
@@ -3143,6 +3373,8 @@ document.addEventListener("click", e => {
   const ss_ = t.closest("[data-sstage]"); if (ss_) { sopStage = ss_.dataset.sstage; render(); return; }
   const fs_ = t.closest("[data-fstage]"); if (fs_) { factStage = fs_.dataset.fstage; render(); return; }
   const fe = t.closest("[data-femit]"); if (fe) { setEmitida(fe.dataset.femit, true); return; }
+  const fne = t.closest("[data-fnoemit]"); if (fne) { setNoEmitida(fne.dataset.fnoemit, true); return; }
+  const fnb = t.closest("[data-fnoback]"); if (fnb) { setNoEmitida(fnb.dataset.fnoback, false); return; }
   const fb = t.closest("[data-fback]"); if (fb) { setEmitida(fb.dataset.fback, false); return; }
   const sb = t.closest("[data-sum]"); if (sb) { summarize(sb.dataset.sum); return; }
   if (t.closest("[data-sumall]")) { summarizeAll(); return; }
