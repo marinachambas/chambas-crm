@@ -20,15 +20,21 @@ async function sql(query, maxRows) {
   if (!/^(with|select)\b/i.test(q) || q.includes(";")) { const e = new Error("Solo se permiten consultas de lectura (SELECT/WITH) de una sola instrucción"); e.status = 400; throw e; }
   // la página es pública: nunca se consultan las tablas con datos personales de candidatos
   if (/\bclabe\b/i.test(q) || /\b(leads|employee|employment|employment_history|cv_data|lead_devices|ai_work_enrollment|atlas_recorder|atlas_recorder_day|prepa_in_\w+)\b/i.test(q)) { const e = new Error("Tabla no disponible"); e.status = 400; throw e; }
-  const c = await getPool().connect();
-  try {
-    await c.query("BEGIN READ ONLY");
-    await c.query(`SET LOCAL statement_timeout = ${Number(process.env.SQL_TIMEOUT_MS) || 25000}`);
-    const r = await c.query(q);
-    await c.query("COMMIT");
-    return r.rows.slice(0, Math.min(Number(maxRows) || 5000, 20000));
-  } catch (e) { await c.query("ROLLBACK").catch(() => {}); throw e; }
-  finally { c.release(); }
+  // consultas pesadas (riesgo, cancelaciones) pueden tardar; en la réplica de lectura a veces se cancelan y se reintentan
+  for (let intento = 0; intento < 3; intento++) {
+    const c = await getPool().connect();
+    try {
+      await c.query("BEGIN READ ONLY");
+      await c.query(`SET LOCAL statement_timeout = ${Number(process.env.SQL_TIMEOUT_MS) || 55000}`);
+      const r = await c.query(q);
+      await c.query("COMMIT");
+      return r.rows.slice(0, Math.min(Number(maxRows) || 5000, 20000));
+    } catch (e) {
+      await c.query("ROLLBACK").catch(() => {});
+      if (/conflict with recovery|terminating connection|Connection terminated/i.test(String(e.message)) && intento < 2) { await new Promise(r => setTimeout(r, 1500)); continue; }
+      throw e;
+    } finally { c.release(); }
+  }
 }
 module.exports = requireAuth(async (req, res) => {
   if (req.method !== "POST") return send(res, 405, { error:"method" });
