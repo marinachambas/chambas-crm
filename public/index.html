@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Vacantes · ChambasAI</title>
+<title>Growth 1.1 · ChambasAI</title>
 <style>
 :root{
   --bg:#ffffff; --bg-soft:#f7f7f5; --hover:rgba(55,53,47,.04); --hover-strong:rgba(55,53,47,.08);
@@ -241,6 +241,15 @@ tr.daytoday td{background:var(--hover)}
 .nm-list{margin-top:16px;display:flex;flex-direction:column;gap:10px;max-height:46vh;overflow:auto}
 .nm-n{border-left:3px solid var(--line);padding:4px 10px}
 .nm-txt{white-space:pre-wrap;font-size:14px;margin-top:3px}
+.act-kp{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
+.act-kp div{display:flex;flex-direction:column}
+.act-kp span{font-size:11px;color:var(--text-2)}
+.act-kp b{font-size:18px;font-variant-numeric:tabular-nums}
+.act-strip{display:grid;grid-template-columns:repeat(16,1fr);gap:2px}
+.act-c{height:26px;border-radius:3px;font-size:11px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600}
+.act-axis{display:grid;grid-template-columns:repeat(16,1fr);gap:2px;font-size:10px;color:var(--text-3);text-align:center;margin-top:2px}
+.act-map td.act-m{width:26px;height:22px;border:2px solid var(--bg);border-radius:4px;padding:0}
+.act-map th{text-align:center;font-weight:500;color:var(--text-3)}
 .tk-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}
 .tk-dates input{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--text)}
 .tk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:10px}
@@ -409,7 +418,7 @@ tr.dim td{opacity:.55}
 <body>
 <main class="page">
   <div class="head">
-    <h1>Vacantes</h1>
+    <h1 id="app-name">Growth 1.1</h1>
     <div class="sect" id="sect" role="tablist"></div>
     <div class="updated" id="updated">Cargando…</div>
   </div>
@@ -1893,22 +1902,28 @@ function buildCohorts() {
   const out = [];
   cohRows.forEach(a => {
     const pagos = a.pagos;
+    const metodo = typeof metodoDe === "function" ? metodoDe(a.email) : "";
+    const manual = /^(Transferencia|Oxxo)$/.test(metodo);
     pagos.forEach((pg, i) => {
       const P = pg.d, nx = pagos[i + 1] || null, N = nx ? nx.d : null;
       const win = a.pubs.filter(d => d >= P && (!N || d < N));
       const d60 = masDias(P, 60);
-      const stripe = !N && a.fin ? a.fin : null;
-      let ref, razon;
-      if (win.length >= 4) { ref = win[3]; razon = `Publicó ${Math.min(win.length, 5)} de 5 (la ${win.length >= 5 ? "5ª" : "4ª"} el ${fmtShort(win[Math.min(win.length, 5) - 1])})`; }
-      else if (stripe && stripe < d60) { ref = stripe; razon = `Stripe renueva el ${fmtShort(stripe)}`; }
-      else { ref = d60; razon = `Terminan sus 60 días el ${fmtShort(d60)}`; }
-      if (N && N < ref) { ref = N; razon = `Compró paquete nuevo el ${fmtShort(N)}`; }
-      const M = mesKey(ref);
+      const stripe = !N && a.fin && !manual ? a.fin : null;
+      // fecha de renovación: Stripe manda; transferencia/OXXO = 60 días desde el pago
+      const renov = stripe || d60;
+      const razonRenov = stripe ? `Stripe renueva el ${fmtShort(stripe)}` : `Se cumplen sus 60 días el ${fmtShort(d60)}${manual ? ` (paga por ${metodo.toLowerCase()})` : ""}`;
+      // regla de 3: 3 o más vacantes publicadas en un mismo mes calendario → cohorte de ese mes
+      const porMes = {}; win.forEach(d => { (porMes[mesKey(d)] ||= []).push(d); });
+      const mes3 = Object.keys(porMes).sort().find(m => porMes[m].length >= 3);
+      const cancelado = !N && (a.status === "past_due" || a.cae || a.status === "canceled");
+      let M, razon;
+      if (mes3 && !cancelado) { M = mes3; razon = `Publicó ${porMes[mes3].length} vacantes en ${mesNombre(mes3)} (la 3ª el ${fmtShort(porMes[mes3].sort()[2])})`; }
+      else { M = mesKey(renov); razon = razonRenov; }
       let st;
       if (N && mesKey(N) > M) {
-        // pagó, pero después de su mes: en su cohorte no pagó y pasa al siguiente
+        // pagó, pero después de su mes: en su cohorte no pagó y pasa al siguiente como último mes
         const M2 = addMes(M, 1);
-        const e0 = { a, P, N, nAmt:nx.m, pub:win.length, d60, stripe, M, razon, st:"paso", rescate:false };
+        const e0 = { a, P, N, nAmt:nx.m, pub:win.length, d60, stripe, M, razon, st:"paso", rescate:false, metodo };
         out.push(e0);
         out.push({ ...e0, M:M2, razon:`No renovó en su cohorte de ${mesNombre(M)}`, st:mesKey(N) === M2 ? "pago" : "no_renueva", tarde:true, carry:true });
         return;
@@ -1917,12 +1932,11 @@ function buildCohorts() {
       else if (a.status === "past_due") st = "fallido";
       else if (a.cae || a.status === "canceled") st = "cancelo";
       else st = M >= cur ? "pendiente" : "paso";
-      const e = { a, P, N, nAmt:nx ? nx.m : 0, pub:win.length, d60, stripe, M, razon, st, rescate:st === "fallido" || st === "cancelo" };
+      const e = { a, P, N, nAmt:nx ? nx.m : 0, pub:win.length, d60, stripe, M, razon, st, rescate:st === "fallido" || st === "cancelo", metodo };
       out.push(e);
       if (!N && M < cur) {
         const M2 = addMes(M, 1);
         out.push({ ...e, M:M2, razon:`No renovó en su cohorte de ${mesNombre(M)}`, st:M2 >= cur ? "ultimo" : "no_renueva", carry:true });
-        if (st === "paso") e.st = "paso";
       }
     });
   });
@@ -1956,7 +1970,7 @@ function renderCohortes() {
       <td><div class="kcell" style="align-items:flex-start;white-space:normal"><span class="btnstack">${e.a.wa ? `<a class="wa-btn" href="https://wa.me/${esc(e.a.wa)}" target="_blank" rel="noopener" title="Escribirle por WhatsApp">${WA_ICON}</a>` : ""}${kapsoBtn(e.a.wa)}</span><div><div class="v-name">${esc(e.a.empresa || e.a.email)}</div><div class="v-mail">${esc(e.a.email)}${e.a.tel ? " · " + esc(e.a.tel) : ""}</div></div></div></td>
       <td class="small">Pagó ${esc(fmtShort(e.P))}<div class="vs" style="text-align:left">60 días: ${esc(fmtShort(e.d60))}${e.stripe ? ` · Stripe: ${esc(fmtShort(e.stripe))}` : ""}</div></td>
       <td class="num"><b>${Math.min(e.pub, 5)} de 5</b>${e.pub > 5 ? `<div class="vs">+${e.pub - 5} extra</div>` : ""}</td>
-      <td class="small" style="max-width:260px">${esc(e.razon)}</td>
+      <td class="small" style="max-width:260px">${esc(e.razon)}${e.metodo ? ` ${metodoTag(e.metodo)}` : ""}</td>
       <td><span class="tag ${col}">${lbl}</span>${e.st === "pago" ? `<div class="vs" style="text-align:left">${esc(fmtShort(e.N))} · ${money(e.nAmt || 2500)}${e.tarde ? " · en su último mes" : ""}</div>` : ""}${e.st === "no_renueva" && e.N ? `<div class="vs" style="text-align:left">volvió a comprar el ${esc(fmtShort(e.N))}</div>` : ""}${e.rescate && e.st !== "cancelo" && e.st !== "fallido" ? ` ${tag("Rescate", "red")}` : ""}</td>
       <td style="text-align:right">${db ? `<button class="linkbtn small muted" data-nocont="${esc(e.a.acc)}">No contactar</button>` : ""}</td>
     </tr>`;
@@ -1972,7 +1986,7 @@ function renderCohortes() {
       ${kp("No renuevan", c("no_renueva") + c("paso"), "", "lost")}
     </div>
     ${list.length ? `<div class="tablewrap"><table style="min-width:980px"><thead><tr><th><button>Cuenta</button></th><th><button>Paquete</button></th><th class="num"><button>Publicadas</button></th><th><button>Por qué está en este cohorte</button></th><th><button>Estado</button></th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="state"><b>No hay cuentas en este cohorte</b></div>`}
-    <div class="foot">Paquete de 5 créditos ($2,500) pagado · cada pago es un paquete · cohorte = mes en que publicó su 4ª o 5ª vacante, o en que terminan sus 60 días / Stripe renueva (lo que pase primero) · si compra antes, queda como “Pagó” en el mes de su compra nueva · se excluyen cuentas @chambas.ai y las marcadas como “No contactar” ${exclAcc.length ? `· <button class="linkbtn small" data-cohexcl>${cohShowExcl ? "ocultar" : "ver"} ${exclAcc.length} excluidas</button>` : ""}</div>
+    <div class="foot">Cada cuenta que compró un paquete de 5 créditos ($2,500) · cohorte = mes en que publicó 3 o más vacantes dentro de un mismo mes; si no, el mes en que renueva (fecha de Stripe, o 60 días desde el pago si paga por transferencia u OXXO) · canceló o pago fallido: va al mes en que le toca renovar y entra a rescate · si no paga en su mes pasa al siguiente como “Último mes para renovar”; si tampoco paga ahí, “No renueva” y sale de los cohortes · se excluyen cuentas @chambas.ai y las marcadas como “No contactar” ${exclAcc.length ? `· <button class="linkbtn small" data-cohexcl>${cohShowExcl ? "ocultar" : "ver"} ${exclAcc.length} excluidas</button>` : ""}</div>
     ${cohShowExcl && exclAcc.length ? `<div class="tablewrap" style="margin-top:8px"><table style="min-width:520px"><tbody>${exclAcc.map(a => `<tr><td>${esc(a.empresa || a.email)}<div class="v-mail">${esc(a.email)}</div></td><td class="small">${esInterna(a) ? "Cuenta interna" : "No contactar"}</td><td style="text-align:right">${!esInterna(a) && db ? `<button class="linkbtn small" data-sicont="${esc(a.acc)}">Volver a incluir</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
 }
 async function setNoContactar(acc, on) {
@@ -1986,6 +2000,22 @@ async function setNoContactar(acc, on) {
 
 // ---------- To-do diario ----------
 let cancelContacts = {}, cancelContactsKey = "";
+// candidatos que dijeron "me contrataron" y el cliente todavía no lo confirma
+let contratados = [], contrState = "idle";
+async function loadContratados(fresh = false) {
+  if (!mcp || contrState === "loading") return;
+  contrState = "loading";
+  const q = `SELECT i.id::text iid, i."vacancyId"::text vid, to_char(i.created_at, 'YYYY-MM-DD') postulo
+FROM interview i JOIN vacancy v ON v.id = i."vacancyId"
+WHERE v.status = 'enable' AND v.deleted_at IS NULL AND i.deleted_at IS NULL
+  AND i.hired_by_candidate IN ('hired', 'yes') AND i.employed IS NOT TRUE`;
+  try {
+    const res = await mcp.callTool(SERVER, TOOL, { query:q, max_rows:5000 }, { cache:{ staleTime:15 * 60 * 1000, gcTime:24 * 3600 * 1000, refresh:fresh } });
+    let p = res.payload; if (typeof p === "string") { try { p = JSON.parse(p); } catch (_) {} }
+    contratados = Array.isArray(p) ? p : []; contrState = "ok";
+  } catch (_) { contrState = "error"; }
+  render();
+}
 // ¿El cliente se quejó en Kapso? (resumen de la conversación en "Molesto" o ticket clasificado como queja)
 function quejaKapso(wa) {
   const ph = normPh(wa); if (!ph) return "";
@@ -2083,7 +2113,7 @@ const PROG_RB = [
   ["quejas", "Quejas atendidas"], ["pack_pub", "Cuentas $2,500 que publicaron"], ["vac0", "Vacantes revisadas"], ["pdec", "Decisiones de pauta"],
 ];
 const PROG_MOY = [["up_of", "Upsells ofrecidos"], ["up_vend", "Upsells vendidos"]];
-const CONTACTO = new Set(["react", "pack0", "quejas", "seg8", "seg10", "seg15", "cancel6", "fac_sol", "fac_emi", "upsell", "ticket"]);
+const CONTACTO = new Set(["contrato", "react", "pack0", "quejas", "seg8", "seg10", "seg15", "cancel6", "fac_sol", "fac_emi", "upsell", "ticket"]);
 function renderProgreso() {
   loadPubsAcc(); if (sheetState === "idle") loadSheet();
   const hoy = localToday();
@@ -2119,6 +2149,7 @@ function renderProgreso() {
         ["Quejas atendidas", cnt("quejas", "ticket"), ""],
         ["Cuentas $2,500 que publicaron", packPub, packTot ? `de ${packTot} contactadas · publicó en los 3 días siguientes` : "publicó en los 3 días después del contacto"],
         ["Vacantes revisadas", cnt("vac0"), ""],
+        ["Contrataciones confirmadas", cnt("contrato"), ""],
         ["Decisiones de pauta", cnt("pdec"), (() => { const si = h.filter(x => x.d.tipo === "pdec" && x.d.decision === "si").length; return si ? `${si} mandadas a pautar` : ""; })()],
       ];
     }
@@ -2221,7 +2252,7 @@ const QUEJA_MIN_NOCONT = 5;
 const lunesDe = d => { const x = new Date(d + "T12:00:00"); const k = (x.getDay() + 6) % 7; x.setDate(x.getDate() - k); return ymd(x); };
 const TODO_OWNERS = ["Rodrigo", "Berny"];
 let todoDocs = {}, todoFilter = "all", todoGrupo = "Cuentas $2,500";
-const TODO_GRUPOS = ["Cuentas $2,500", "Experiencia de candidatos", "Vacantes", "Seguimiento", "Decisión de pauta", "Reactivaciones", "Facturas", "Upsells", "Reactivar clientes", "Soporte"];
+const TODO_GRUPOS = ["Cuentas $2,500", "Experiencia de candidatos", "Vacantes", "Contrataciones", "Seguimiento", "Decisión de pauta", "Reactivaciones", "Facturas", "Upsells", "Reactivar clientes", "Soporte"];
 function todoTasks() {
   const tasks = [];
   const hoy = localToday();
@@ -2410,6 +2441,18 @@ function todoTasks() {
         msg:o => `Hola, soy ${o} de Chambas 👋 Ya pasaron ${dias} días desde que publicaste tu última vacante con nosotros (${puesto}). ¿Tienes alguna nueva vacante que quieras cubrir? Con gusto te ayudo a publicarla.` });
     });
   }
+  // 12) Candidatos que dicen que ya los contrataron: confirmar con el cliente
+  const porVacC = {}; contratados.forEach(c => { (porVacC[c.vid] ||= []).push(c); });
+  Object.entries(porVacC).forEach(([vid, cs]) => {
+    const r = raw.find(v => v.id === vid); if (!r || r.jobType === "ai_work") return;
+    if (noContactar[r.acc] || /@chambas\.ai$/i.test(r.email || "")) return;
+    const n = cs.length;
+    tasks.push({ key:`contrato:${vid}:${n}`, acc:r.acc, grupo:"Contrataciones", tipo:"contrato", a:{ empresa:r.empresa, email:r.email, tel:r.tel, wa:r.wa }, peso:n,
+      head:`Confirmar contratación con <b>${esc(r.empresa)}</b> · ${esc(r.vacante)}`,
+      lines:[`<span class="tag green">🎉 ${n} ${n === 1 ? "candidato dice" : "candidatos dicen"} que ya ${n === 1 ? "lo contrataron" : "los contrataron"}</span> · el cliente todavía no lo confirma`,
+        `${emo(r.puesto)} ${esc(r.puesto || "")} · ${r.post} postulados · ${r.asist} asistencias · ${r.contr} contratados en el CRM`],
+      msg:o => `Hola, soy ${o} de Chambas 👋 ${n === 1 ? "Uno de tus candidatos" : n + " de tus candidatos"} de la vacante "${r.vacante}" nos ${n === 1 ? "dijo" : "dijeron"} que ya ${n === 1 ? "lo contrataste" : "los contrataste"} 🎉 ¿Nos confirmas si ${n === 1 ? "quedó" : "quedaron"}? Así actualizamos tu vacante.` });
+  });
   // 4 y 5) Seguimiento a los 8 y 15 días del periodo de la vacante (el lunes también entra lo que tocaba el fin de semana)
   const extraFinde = new Date(hoy + "T12:00:00").getDay() === 1 ? 2 : 0;
   raw.forEach(r => {
@@ -2434,6 +2477,7 @@ const TODO_TIPOS = {
   fac_emi:{ titulo:"Emitir factura", instr:"Ya mandaron sus datos fiscales: emitir la factura y enviarla. Al terminar, pica “Marcar emitida”. Si al final no se va a emitir, pica “Marcar no emitida”. Las dos se actualizan también en la sección Facturas." },
   ticket:{ titulo:"Tickets de soporte sin resolver", instr:"Tickets donde el cliente pidió hablar con una persona, quiere cancelar o quiere comprar más, y que siguen sin resolverse. Contestar en Kapso y marcar como hecha cuando quede resuelto." },
   react:{ titulo:"Clientes sin publicar en más de 3 meses", instr:"Clientes que llevan más de 3 meses sin publicar, no tienen vacantes activas ni plan, y no tienen quejas en Kapso. Escribirles para saber si tienen una nueva vacante que cubrir. El botón de WhatsApp abre con el mensaje escrito." },
+  contrato:{ titulo:"Confirmar contratación con el cliente", instr:"Un candidato marcó que ya lo contrataron. Confirmar con el cliente si de verdad quedó contratado. El botón de WhatsApp abre con el mensaje escrito." },
   upsell:{ titulo:"Ofrecer el paquete de $2,500", instr:"Clientes que pagan por vacante y: tienen una vacante con más de 40 postulados en sus primeros 10 días, o han publicado más de una vacante con nosotros y tienen una vacante con buen rendimiento (semáforo verde). Ofrecerles el paquete de 5 vacantes por $2,500." },
   pdec:{ titulo:"¿Pautar o no pautar?", instr:"Vacantes con suscripción vigente, publicadas hace más de 48 horas, con 18+ días por delante y bajo rendimiento (menos de 10 postulados, menos de 5 asistencias y 0 contratados). Revisa la vacante y decide: si la quieres pautar, le llega a Marina en “Por pautar”." },
   pack0:{ titulo:"Cuentas sin publicar vacante", instr:"Contactar para presionar a publicar: ayúdales a subir su primera vacante y recuérdales que tienen 5 créditos pagados." },
@@ -3013,6 +3057,43 @@ function renderClientes() {
     <div class="foot">Clientes = cuentas con al menos una vacante pagada · invertido = suma de sus cobros en las pestañas mensuales de la hoja Revenue (si no aparece ahí, la suma de sus pagos en el sistema) · en ChambasAI = desde su primera vacante o pago</div>`;
 }
 
+// ---------- Actividad del equipo (vista oculta: abrir con #actividad al final del link) ----------
+let actDia = "", actOn = location.hash === "#actividad";
+function renderActividad() {
+  const hoy = localToday();
+  const dias = []; for (let i = 0; i < 14 && dias.length < 10; i++) { const d = ymd(new Date(new Date(hoy + "T12:00:00").getTime() - i * 864e5)); const w = new Date(d + "T12:00:00").getDay(); if (w !== 0 && w !== 6) dias.push(d); }
+  if (!actDia || !dias.includes(actDia)) actDia = dias[0];
+  const hechas = Object.values(todoDocs).filter(d => d.done && d.doneAt).map(d => ({ owner:d.doneOwner || d.owner, dia:String(d.doneAt).slice(0, 10), hm:String(d.doneAt).slice(11, 16) }));
+  const H0 = 7, H1 = 22, horas = Array.from({ length:H1 - H0 + 1 }, (_, i) => H0 + i);
+  const fmtD = d => { const x = new Date(d + "T12:00:00"); return `${DIAS[(x.getDay() + 6) % 7]} ${fmtShort(d)}`; };
+  const chips = dias.map(d => `<button class="rchip${actDia === d ? " on" : ""}" data-actdia="${d}">${esc(fmtD(d))}</button>`).join("");
+  // resumen del día
+  const tarjetas = PROG_PERSONAS.map(o => {
+    const h = hechas.filter(x => x.owner === o && x.dia === actDia).sort((a, b) => a.hm.localeCompare(b.hm));
+    const pri = h[0] && h[0].hm, ult = h.length && h[h.length - 1].hm;
+    const span = pri && ult ? (() => { const m = (+ult.slice(0, 2) * 60 + +ult.slice(3)) - (+pri.slice(0, 2) * 60 + +pri.slice(3)); return `${Math.floor(m / 60)} h ${m % 60} min`; })() : "—";
+    const porHora = horas.map(hh => h.filter(x => +x.hm.slice(0, 2) === hh).length);
+    const mx = Math.max(1, ...porHora);
+    return `<div class="prog-card">
+      <div class="prog-name">${tag(o, OWNER_COLOR[o] || "gray")}</div>
+      <div class="act-kp"><div><span>Primera tarea</span><b>${pri || "—"}</b></div><div><span>Última tarea</span><b>${ult || "—"}</b></div><div><span>Tareas</span><b>${h.length}</b></div><div><span>Entre la primera y la última</span><b>${span}</b></div></div>
+      <div class="act-strip">${porHora.map((n, i) => `<div class="act-c" style="background:${n ? `rgba(35,131,226,${0.18 + 0.82 * n / mx})` : "var(--hover)"}" title="${horas[i]}:00–${horas[i]}:59 · ${n} ${n === 1 ? "tarea" : "tareas"}">${n || ""}</div>`).join("")}</div>
+      <div class="act-axis">${horas.map(hh => `<span>${hh}</span>`).join("")}</div>
+    </div>`;
+  }).join("");
+  // mapa de los últimos días hábiles por persona
+  const mapas = PROG_PERSONAS.map(o => {
+    const grid = dias.slice().reverse().map(d => ({ d, n:horas.map(hh => hechas.filter(x => x.owner === o && x.dia === d && +x.hm.slice(0, 2) === hh).length) }));
+    const mx = Math.max(1, ...grid.flatMap(g => g.n));
+    const filas = grid.map(g => { const h = hechas.filter(x => x.owner === o && x.dia === g.d).map(x => x.hm).sort(); return `<tr><td class="small" style="white-space:nowrap">${esc(fmtD(g.d))}</td>${g.n.map((n, i) => `<td class="act-m" style="background:${n ? `rgba(35,131,226,${0.18 + 0.82 * n / mx})` : "var(--hover)"}" title="${esc(fmtD(g.d))} · ${horas[i]}:00 · ${n} ${n === 1 ? "tarea" : "tareas"}"></td>`).join("")}<td class="small muted" style="white-space:nowrap">${h.length ? `${h[0]}–${h[h.length - 1]} · ${h.length}` : "sin tareas"}</td></tr>`; }).join("");
+    return `<div class="rsec"><div class="rsec-h">${tag(o, OWNER_COLOR[o] || "gray")} · últimos ${dias.length} días hábiles</div><div class="tablewrap"><table class="act-map"><thead><tr><th></th>${horas.map(hh => `<th class="small">${hh}</th>`).join("")}<th class="small">primera–última · total</th></tr></thead><tbody>${filas}</tbody></table></div></div>`;
+  }).join("");
+  return `<div class="tk-head" style="margin-top:14px"><span class="small muted" style="letter-spacing:.04em">DÍA</span>${chips}</div>
+    <div class="prog-grid">${tarjetas}</div>
+    ${mapas}
+    <div class="foot">Vista privada (solo se abre con #actividad en el link) · horas de México según el momento en que marcaron cada tarea como hecha · cada cuadro es una hora; más oscuro = más tareas marcadas en esa hora · solo días hábiles</div>`;
+}
+
 function renderDayPanel() {
   const el = $("panel");
   const evs = visible().filter(r => r.vence === dayId).sort((x, y) => x.real - y.real);
@@ -3086,6 +3167,7 @@ function render() {
 }
 function renderInner() {
   if (typeof renderUpdated === "function" && autoRun) renderUpdated();
+  if (actOn) { $("seg").innerHTML = `<button aria-pressed="true">Actividad del equipo</button><button data-actsalir>← Salir</button>`; $("content").innerHTML = renderActividad(); return; }
   const all = rows();
   if (section === "pauta" && filterId === "notpaid") filterId = "all";
   const fBase = section === "pauta" ? all.filter(r => r.pauta === "Pautada") : all;
@@ -3099,13 +3181,13 @@ function renderInner() {
   if (loadState === "loading" && !raw.length) { $("content").innerHTML = skeleton(); return; }
   if (section === "sop") { if (riskState === "idle") { loadRisk(); return; } $("content").innerHTML = renderSoporte(); return; }
   if (section === "fact") { if (riskState === "idle") { loadRisk(); return; } $("content").innerHTML = renderFacturas(); return; }
-  if (section === "todo") { const nAtr = (packRows.length || riskRows.length) ? todoAtrasadas().length : 0; const nPP = Object.values(pautaReq).filter(x => x.decision === "si" && x.estado === "pendiente").length; $("seg").innerHTML = `<button aria-pressed="${todoView === "hoy"}" data-todoview="hoy">Tareas de hoy</button><button aria-pressed="${todoView === "pp"}" data-todoview="pp">Por pautar<span class="n">${nPP}</span></button><button aria-pressed="${todoView === "atr"}" data-todoview="atr">Días anteriores<span class="n ${nAtr ? "zero" : ""}">${nAtr}</span></button><button aria-pressed="${todoView === "prog"}" data-todoview="prog">Progreso</button>`; if (todoView === "pp") { $("content").innerHTML = renderPorPautar(); return; } if (packState === "idle") loadPack(); if (riskState === "idle") loadRisk(); loadHistVacs(); loadPost10(); if (cliState === "idle") loadClientes(); if (tkState === "idle") loadTickets(); if (quejasState === "idle") loadQuejas(); if (cohState === "idle") loadCoh(); if (cancelState === "idle") loadCancels(); else if (cancelState === "ok") loadCancelContacts(); if (todoView === "prog") { $("content").innerHTML = renderProgreso(); return; } if (todoView === "atr") { $("content").innerHTML = renderTodo("atr"); return; } $("content").innerHTML = renderTodo(); return; }
+  if (section === "todo") { const nAtr = (packRows.length || riskRows.length) ? todoAtrasadas().length : 0; const nPP = Object.values(pautaReq).filter(x => x.decision === "si" && x.estado === "pendiente").length; $("seg").innerHTML = `<button aria-pressed="${todoView === "hoy"}" data-todoview="hoy">Tareas de hoy</button><button aria-pressed="${todoView === "pp"}" data-todoview="pp">Por pautar<span class="n">${nPP}</span></button><button aria-pressed="${todoView === "atr"}" data-todoview="atr">Días anteriores<span class="n ${nAtr ? "zero" : ""}">${nAtr}</span></button><button aria-pressed="${todoView === "prog"}" data-todoview="prog">Progreso</button>`; if (todoView === "pp") { $("content").innerHTML = renderPorPautar(); return; } if (packState === "idle") loadPack(); if (riskState === "idle") loadRisk(); loadHistVacs(); loadPost10(); if (contrState === "idle") loadContratados(); if (cliState === "idle") loadClientes(); if (tkState === "idle") loadTickets(); if (quejasState === "idle") loadQuejas(); if (cohState === "idle") loadCoh(); if (cancelState === "idle") loadCancels(); else if (cancelState === "ok") loadCancelContacts(); if (todoView === "prog") { $("content").innerHTML = renderProgreso(); return; } if (todoView === "atr") { $("content").innerHTML = renderTodo("atr"); return; } $("content").innerHTML = renderTodo(); return; }
   if (section === "ins") $("seg").innerHTML = [["canc90", "Cancelaciones · 90 días"], ["canc30", "Cancelaciones · 30 días"], ["cancres", "Cancelaciones · 90 vs 30"], ["resp", "Tiempo de respuesta"], ["clientes", "Clientes"]].map(([id, l]) => `<button aria-pressed="${insView === id}" data-insview="${id}">${l}</button>`).join("");
   if (section === "ins") { if (cancDState === "idle") loadCancData(); $("content").innerHTML = insView === "clientes" ? renderClientes() : insView === "resp" ? renderRespuesta() : insView === "cancres" ? renderCancResumen() : renderCancelaciones(insView === "canc30" ? 30 : 90); if (openId) renderPanel(); return; }
   if (section === "cal" && calView === "pack") {
     if (riskState === "idle") loadRisk();
     const sw = `<div class="seg2">${[["seg", "Seguimiento"], ["coh", "Cohortes"]].map(([id, l]) => `<button aria-pressed="${packView === id}" data-packview="${id}">${l}</button>`).join("")}</div>`;
-    if (packView === "coh") { if (cohState === "idle") { loadCoh(); } $("content").innerHTML = sw + renderCohortes(); return; }
+    if (packView === "coh") { if (cohState === "idle") { loadCoh(); } if (sheetState === "idle") loadSheet(); $("content").innerHTML = sw + renderCohortes(); return; }
     if (packState === "idle") { loadPack(); } $("content").innerHTML = sw + renderPack(); return; }
   if (section === "cal" && calView === "mes") { if (riskState === "idle") loadRisk(); if (renewState === "idle") loadRenewals(); if (renovMState === "idle") { loadRenovM(); return; } $("content").innerHTML = renderMes(); return; }
   if (section === "cal" && calView === "resumen") { if (riskState === "idle") loadRisk(); if (renewState === "idle") loadRenewals(); if (renovState === "idle") { loadRenov(); return; } $("content").innerHTML = renderResumen(); return; }
@@ -3320,7 +3402,11 @@ document.addEventListener("click", e => {
   const s = t.closest("[data-sort]"); if (s) { const k = s.dataset.sort; sort = sort.k === k ? { k, dir:sort.dir === "asc" ? "desc" : "asc" } : { k, dir:"asc" }; render(); return; }
   if (t.closest("[data-more]")) { shown += PAGE; render(); return; }
   if (t.closest("[data-close]") || t === $("scrim")) { closePanel(); return; }
-  const sc = t.closest("[data-section]"); if (sc) { section = sc.dataset.section; render(); return; }
+  const sal_ = t.closest("[data-actsalir]");
+  const sc = t.closest("[data-section]");
+  if (sal_ || (sc && actOn)) { actOn = false; try { history.replaceState(null, "", location.pathname + location.search); } catch (_) {} }
+  if (sal_) { render(); return; }
+  if (sc) { section = sc.dataset.section; render(); return; }
   const cn = t.closest("[data-cal]"); if (cn) { const [y, m] = calMonth.split("-").map(Number); const a = cn.dataset.cal; if (a === "today") calMonth = localToday().slice(0, 7); else { const d = new Date(y, m - 1 + (a === "next" ? 1 : -1), 1); calMonth = ymd(d).slice(0, 7); } render(); return; }
   const dy = t.closest("[data-day]"); if (dy) { openDay(dy.dataset.day); return; }
   if (t.closest("[data-retry]")) { load(true); return; }
@@ -3365,6 +3451,7 @@ document.addEventListener("click", e => {
   const nb_ = t.closest("[data-nota]"); if (nb_ && (nb_.classList.contains("nota-btn") || nb_.classList.contains("cli-row"))) { abrirNota(nb_); return; }
   const cs_ = t.closest("[data-clisort]"); if (cs_) { cliSort = cs_.dataset.clisort; render(); return; }
   if (t.closest("[data-cliretry]")) { loadClientes(true); return; }
+  const ad_ = t.closest("[data-actdia]"); if (ad_) { actDia = ad_.dataset.actdia; render(); return; }
   const rtr_ = t.closest("[data-rtr]"); if (rtr_) { rtRange = rtr_.dataset.rtr; render(); return; }
   const tkr_ = t.closest("[data-tkr]"); if (tkr_) { tkRange = tkr_.dataset.tkr; tkFiltro = null; render(); return; }
   const tkf_ = t.closest("[data-tkf]"); if (tkf_) { tkFiltro = tkFiltro === tkf_.dataset.tkf || tkf_.dataset.tkf === "noop" ? null : tkf_.dataset.tkf; render(); return; }
@@ -3396,6 +3483,7 @@ document.addEventListener("focusout", e => {
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.dataset?.campana) e.target.blur(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") { if (popEl) closePop(); else if (openId) closePanel(); } });
 setInterval(renderUpdated, 60000);
+window.addEventListener("hashchange", () => { actOn = location.hash === "#actividad"; render(); });
 document.addEventListener("change", e => { const c = e.target && e.target.closest && e.target.closest("[data-todochk]"); if (c) todoToggle(c.dataset.todochk, c.checked); const dd = e.target && e.target.dataset && e.target.dataset.tkd; if (dd) { if (dd === "desde") tkDesde = e.target.value; else tkHasta = e.target.value; render(); } });
 
 render(); renderUpdated();
