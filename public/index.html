@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Growth 1.1 · ChambasAI</title>
+<title>Growth 1.2 · ChambasAI</title>
 <style>
 :root{
   --bg:#ffffff; --bg-soft:#f7f7f5; --hover:rgba(55,53,47,.04); --hover-strong:rgba(55,53,47,.08);
@@ -418,7 +418,7 @@ tr.dim td{opacity:.55}
 <body>
 <main class="page">
   <div class="head">
-    <h1 id="app-name">Growth 1.1</h1>
+    <h1 id="app-name">Growth 1.2</h1>
     <div class="sect" id="sect" role="tablist"></div>
     <div class="updated" id="updated">Cargando…</div>
   </div>
@@ -2002,17 +2002,25 @@ async function setNoContactar(acc, on) {
 let cancelContacts = {}, cancelContactsKey = "";
 // candidatos que dijeron "me contrataron" y el cliente todavía no lo confirma
 let contratados = [], contrState = "idle";
+let contrCol = "", contrColAprox = false;
 async function loadContratados(fresh = false) {
   if (!mcp || contrState === "loading") return;
   contrState = "loading";
-  const q = `SELECT i.id::text iid, i."vacancyId"::text vid, to_char(i.created_at, 'YYYY-MM-DD') postulo
+  const call = async q => { const res = await mcp.callTool(SERVER, TOOL, { query:q, max_rows:5000 }, { cache:{ staleTime:15 * 60 * 1000, gcTime:24 * 3600 * 1000, refresh:fresh } }); let p = res.payload; if (typeof p === "string") { try { p = JSON.parse(p); } catch (_) {} } return Array.isArray(p) ? p : []; };
+  try {
+    // ¿qué columna guarda cuándo el candidato marcó "me contrataron"? (si no hay una, se usa la última actualización)
+    if (!contrCol) {
+      const cols = (await call(`SELECT column_name FROM information_schema.columns WHERE table_name = 'interview'`)).map(c => c.column_name);
+      const exacta = cols.find(c => /hired/i.test(c) && /(_at|At|date|fecha)$/i.test(c));
+      contrCol = exacta || cols.find(c => /^updated_?at$/i.test(c)) || "";
+      contrColAprox = !exacta;
+    }
+    const fechaSql = contrCol ? `to_char(i."${contrCol}", 'YYYY-MM-DD HH24:MI')` : "NULL";
+    const q = `SELECT i.id::text iid, i."vacancyId"::text vid, to_char(i.created_at, 'YYYY-MM-DD') postulo, ${fechaSql} marco
 FROM interview i JOIN vacancy v ON v.id = i."vacancyId"
 WHERE v.status = 'enable' AND v.deleted_at IS NULL AND i.deleted_at IS NULL
   AND i.hired_by_candidate IN ('hired', 'yes') AND i.employed IS NOT TRUE`;
-  try {
-    const res = await mcp.callTool(SERVER, TOOL, { query:q, max_rows:5000 }, { cache:{ staleTime:15 * 60 * 1000, gcTime:24 * 3600 * 1000, refresh:fresh } });
-    let p = res.payload; if (typeof p === "string") { try { p = JSON.parse(p); } catch (_) {} }
-    contratados = Array.isArray(p) ? p : []; contrState = "ok";
+    contratados = await call(q); contrState = "ok";
   } catch (_) { contrState = "error"; }
   render();
 }
@@ -2450,6 +2458,7 @@ function todoTasks() {
     tasks.push({ key:`contrato:${vid}:${n}`, acc:r.acc, grupo:"Contrataciones", tipo:"contrato", a:{ empresa:r.empresa, email:r.email, tel:r.tel, wa:r.wa }, peso:n,
       head:`Confirmar contratación con <b>${esc(r.empresa)}</b> · ${esc(r.vacante)}`,
       lines:[`<span class="tag green">🎉 ${n} ${n === 1 ? "candidato dice" : "candidatos dicen"} que ya ${n === 1 ? "lo contrataron" : "los contrataron"}</span> · el cliente todavía no lo confirma`,
+        `${contrColAprox ? "Marcado (aprox.)" : "Marcó que fue contratado"}: ${cs.map(c => c.marco ? `<b>${esc(fmtShort(String(c.marco).slice(0, 10)))}${String(c.marco).length > 10 ? ", " + esc(String(c.marco).slice(11, 16)) : ""}</b>` : "sin fecha").sort().join(" · ")}`,
         `${emo(r.puesto)} ${esc(r.puesto || "")} · ${r.post} postulados · ${r.asist} asistencias · ${r.contr} contratados en el CRM`],
       msg:o => `Hola, soy ${o} de Chambas 👋 ${n === 1 ? "Uno de tus candidatos" : n + " de tus candidatos"} de la vacante "${r.vacante}" nos ${n === 1 ? "dijo" : "dijeron"} que ya ${n === 1 ? "lo contrataste" : "los contrataste"} 🎉 ¿Nos confirmas si ${n === 1 ? "quedó" : "quedaron"}? Así actualizamos tu vacante.` });
   });
