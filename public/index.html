@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Growth 1.5 · ChambasAI</title>
+<title>Growth 1.7 · ChambasAI</title>
 <style>
 :root{
   --bg:#ffffff; --bg-soft:#f7f7f5; --hover:rgba(55,53,47,.04); --hover-strong:rgba(55,53,47,.08);
@@ -228,7 +228,7 @@ tr.daytoday td{background:var(--hover)}
 .nm-t{font-size:20px;font-weight:700}
 .nm-x{font-size:18px;color:var(--text-2);padding:2px 8px;border-radius:6px}
 .nm-x:hover{background:var(--hover)}
-.nm-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:16px 0}
+.nm-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
 .nm-stats div{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column}
 .nm-stats span{font-size:11px;color:var(--text-2);text-transform:uppercase;letter-spacing:.03em}
 .nm-stats b{font-size:17px;margin-top:2px}
@@ -418,7 +418,7 @@ tr.dim td{opacity:.55}
 <body>
 <main class="page">
   <div class="head">
-    <h1 id="app-name">Growth 1.5</h1>
+    <h1 id="app-name">Growth 1.7</h1>
     <div class="sect" id="sect" role="tablist"></div>
     <div class="updated" id="updated">Cargando…</div>
   </div>
@@ -1828,6 +1828,7 @@ async function loadPack(fresh = false) {
       } else { a.comps = null; a.score = 100; a.bucket = "Crítico"; }
       return a;
     });
+    recalcularUsoPaquetes();
     packState = "ok";
   } catch (e) { packState = "error"; }
   render();
@@ -1856,7 +1857,7 @@ function renderPack() {
     return `<tr>
       <td><div class="kcell" style="align-items:flex-start;white-space:normal"><span class="btnstack">${a.wa ? `<a class="wa-btn" href="https://wa.me/${esc(a.wa)}" target="_blank" rel="noopener" title="Escribirle por WhatsApp">${WA_ICON}</a>` : ""}${kapsoBtn(a.wa)}</span><div><div class="v-name">${esc(a.empresa || a.email)}</div><div class="v-mail">${esc(a.email)}${a.tel ? " · " + esc(a.tel) : ""}</div><div class="v-mail">Cliente desde ${esc(fmtShort(a.compra))} · ${a.ciclos} ${a.ciclos === 1 ? "ciclo pagado" : "ciclos pagados"}</div></div></div></td>
       <td>${SUBT(a)}<div class="vs" style="text-align:left">${a.fin ? (a.cae ? "termina " : "renueva ") + esc(fmtShort(a.fin)) : ""}${diasCiclo != null ? ` · día ${diasCiclo} del ciclo` : ""}</div></td>
-      <td style="min-width:150px"><b>${Math.min(a.usados, a.cupo)} de ${a.cupo}</b> <span class="small muted">créditos usados</span><div class="tm-bar" style="margin-top:6px;height:8px"><div class="tm-fill" style="width:${pct}%;${lento ? "background:#e03e3e" : ""}"></div></div><div class="vs" style="text-align:left">${a.pub} ${a.pub === 1 ? "publicada" : "publicadas"}${a.ext ? ` · ${a.ext} ${a.ext === 1 ? "extensión" : "extensiones"}` : ""} · ${a.bal} disponibles${lento ? ' · <span class="zero">no ha usado nada</span>' : ""}</div></td>
+      <td style="min-width:150px"><b>${Math.min(a.usados, a.cupo)} de ${a.cupo}</b> <span class="small muted">créditos usados</span><div class="tm-bar" style="margin-top:6px;height:8px"><div class="tm-fill" style="width:${pct}%;${lento ? "background:#e03e3e" : ""}"></div></div><div class="vs" style="text-align:left">${a.usoFuente === "vacantes" ? `${a.usados} ${a.usados === 1 ? "vacante publicada" : "vacantes publicadas"} desde su compra${a.ultPub ? ` · última ${esc(fmtShort(a.ultPub))}` : ""}${a.sobrantes ? ` · +${a.sobrantes} de paquetes anteriores` : ""}` : `${a.pub} ${a.pub === 1 ? "publicada" : "publicadas"}${a.ext ? ` · ${a.ext} ${a.ext === 1 ? "extensión" : "extensiones"}` : ""} · ${a.bal} disponibles`}${lento ? ' · <span class="zero">no ha usado nada</span>' : ""}</div></td>
       <td class="num"><b>${a.real}</b><div class="vs">mediana ${a.mr ?? "—"} /vac</div></td>
       <td class="num"><b>${a.asist}</b><div class="vs">mediana ${a.ma ?? "—"} /vac</div></td>
       <td class="num"><b class="${a.contr ? "good" : ""}">${a.contr}</b></td>
@@ -1875,7 +1876,7 @@ function renderPack() {
     <div class="foot">Plan de créditos de $2,500 (5 vacantes por ciclo) activo o con pago vencido · “usados” = créditos del ciclo actual para publicar, reactivar o extender · postulados, asistencias y contratados = todas las vacantes publicadas con el paquete · semáforo = mismos criterios de Riesgo con la mediana por vacante del paquete</div>`;
 }
 
-const COH_SQL = "WITH pays AS (\n  SELECT l.account_id,\n    json_agg(json_build_object('d', to_char(l.created_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD'), 'm', COALESCE((l.metadata->>'amount_paid')::float, 0)) ORDER BY l.created_at) arr\n  FROM subscription_credit_ledger l\n  WHERE l.reason IN ('subscription_renewal', 'early_renewal') AND COALESCE((l.metadata->>'amount_paid')::float, 0) > 0\n  GROUP BY 1\n),\npubs AS (\n  SELECT l.account_id, json_agg(to_char(l.created_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') ORDER BY l.created_at) arr\n  FROM subscription_credit_ledger l WHERE l.reason IN ('vacancy_publish', 'vacancy_reactivate') GROUP BY 1\n),\nnm AS (\n  SELECT DISTINCT ON (COALESCE(uu.\"adminId\", uu.id)) COALESCE(uu.\"adminId\", uu.id) owner, c.name\n  FROM vacancy v JOIN company c ON c.id = v.\"companyId\" JOIN \"user\" uu ON uu.id = v.\"userId\"\n  ORDER BY COALESCE(uu.\"adminId\", uu.id), v.created_at DESC\n)\nSELECT s.id::text sid, s.owner_user_id::text acc, COALESCE(nm.name, o.email) empresa, o.email, o.lada, o.phone,\n  s.status, s.cancel_at_period_end cae,\n  to_char(s.canceled_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') cancel_d,\n  to_char(s.current_period_end AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') fin,\n  pays.arr::text pagos, COALESCE(pubs.arr::text, '[]') pubs,\n  to_char(NOW() AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') hoy\nFROM subscription_credit_accounts s\nJOIN pays ON pays.account_id = s.id\nJOIN \"user\" o ON o.id = s.owner_user_id\nLEFT JOIN pubs ON pubs.account_id = s.id\nLEFT JOIN nm ON nm.owner = s.owner_user_id";
+const COH_SQL = "WITH pays AS (\n  SELECT l.account_id,\n    json_agg(json_build_object('d', to_char(l.created_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD'), 'm', COALESCE((l.metadata->>'amount_paid')::float, 0)) ORDER BY l.created_at) arr\n  FROM subscription_credit_ledger l\n  WHERE l.reason IN ('subscription_renewal', 'early_renewal') AND COALESCE((l.metadata->>'amount_paid')::float, 0) > 0\n  GROUP BY 1\n),\npubs AS (\n  SELECT s2.id account_id, json_agg(to_char(v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') ORDER BY v.created_at) arr\n  FROM subscription_credit_accounts s2 JOIN \"user\" u2 ON COALESCE(u2.\"adminId\", u2.id) = s2.owner_user_id JOIN vacancy v ON v.\"userId\" = u2.id\n  WHERE v.job_type = 'traditional' AND COALESCE(v.is_external, false) = false GROUP BY 1\n),\nnm AS (\n  SELECT DISTINCT ON (COALESCE(uu.\"adminId\", uu.id)) COALESCE(uu.\"adminId\", uu.id) owner, c.name\n  FROM vacancy v JOIN company c ON c.id = v.\"companyId\" JOIN \"user\" uu ON uu.id = v.\"userId\"\n  ORDER BY COALESCE(uu.\"adminId\", uu.id), v.created_at DESC\n)\nSELECT s.id::text sid, s.owner_user_id::text acc, COALESCE(nm.name, o.email) empresa, o.email, o.lada, o.phone,\n  s.status, s.cancel_at_period_end cae,\n  to_char(s.canceled_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') cancel_d,\n  to_char(s.current_period_end AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') fin,\n  pays.arr::text pagos, COALESCE(pubs.arr::text, '[]') pubs,\n  to_char(NOW() AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') hoy\nFROM subscription_credit_accounts s\nJOIN pays ON pays.account_id = s.id\nJOIN \"user\" o ON o.id = s.owner_user_id\nLEFT JOIN pubs ON pubs.account_id = s.id\nLEFT JOIN nm ON nm.owner = s.owner_user_id";
 let packView = "seg", cohRows = [], cohState = "idle", cohSel = null, noContactar = {}, cohShowExcl = false, cohHoy = "";
 async function loadCoh(fresh = false) {
   if (!mcp) { cohState = "error"; render(); return; }
@@ -1888,6 +1889,7 @@ async function loadCoh(fresh = false) {
     cohRows = p.map(x => ({ ...x, pagos:pj(x.pagos).filter(z => z && z.d).sort((a, b) => a.d.localeCompare(b.d)), pubs:pj(x.pubs).filter(Boolean).sort(), wa:waNum(x.lada, x.phone), tel:fmtTel(x.lada, x.phone) }));
     cohHoy = (p[0] && p[0].hoy) || localToday();
     cohState = "ok";
+    recalcularUsoPaquetes();
   } catch (e) { cohState = "error"; }
   render();
 }
@@ -1897,6 +1899,26 @@ const masDias = (d, n) => ymd(new Date(new Date(d + "T12:00:00").getTime() + n *
 const mesNombre = m => { const [y, mo] = m.split("-").map(Number); return MESES_L[mo - 1] + (y !== Number(cohHoy.slice(0, 4)) ? " " + y : ""); };
 const esInterna = a => /@chambas\.ai$/i.test(a.email || "");
 const excluida = a => esInterna(a) || !!noContactar[a.acc];
+// Vacantes de cada paquete: toda vacante publicada después de comprar un paquete cuenta para ese paquete
+// hasta completar 5; después se pasa al siguiente paquete comprado (los créditos que sobran se acumulan).
+// Lo que se publica cuando ya no hay paquete con lugar no es del paquete (pago por vacante o sin pago).
+function asignarPaquetes(pagos, pubs) {
+  const paq = pagos.map(d => ({ P:d, fechas:[] }));
+  pubs.slice().sort().forEach(d => { const k = paq.find(x => x.P <= d && x.fechas.length < 5); if (k) k.fechas.push(d); });
+  return paq;
+}
+function recalcularUsoPaquetes() {
+  if (!cohRows.length || !packRows.length) return;
+  const porAcc = Object.fromEntries(cohRows.map(c => [c.acc, c]));
+  packRows.forEach(a => {
+    const c = porAcc[a.acc]; if (!c || !c.pagos.length) return;
+    const al = asignarPaquetes(c.pagos.map(x => x.d), c.pubs);
+    const ult = al[al.length - 1];
+    const previos = al.slice(0, -1).reduce((s, x) => s + (5 - x.fechas.length), 0);
+    a.usados = ult.fechas.length; a.cupo = 5; a.sobrantes = previos; a.usoFuente = "vacantes";
+    a.ultPub = ult.fechas[ult.fechas.length - 1] || "";
+  });
+}
 function buildCohorts() {
   const cur = mesKey(cohHoy || localToday());
   const out = [];
@@ -1904,9 +1926,10 @@ function buildCohorts() {
     const pagos = a.pagos;
     const metodo = typeof metodoDe === "function" ? metodoDe(a.email) : "";
     const manual = /^(Transferencia|Oxxo)$/.test(metodo);
+    const asign = asignarPaquetes(pagos.map(x => x.d), a.pubs);
     pagos.forEach((pg, i) => {
       const P = pg.d, nx = pagos[i + 1] || null, N = nx ? nx.d : null;
-      const win = a.pubs.filter(d => d >= P && (!N || d < N));
+      const win = asign[i].fechas;
       const d60 = masDias(P, 60);
       const stripe = !N && a.fin && !manual ? a.fin : null;
       // fecha de renovación: Stripe manda; transferencia/OXXO = 60 días desde el pago
@@ -2135,7 +2158,7 @@ function renderProgreso() {
   const enSemana = d => d && d.slice(0, 10) >= ini && d.slice(0, 10) <= fin;
   const hechas = Object.entries(todoDocs).filter(([, d]) => d.done && enSemana(d.doneAt)).map(([k, d]) => ({ k, d, owner:d.doneOwner || d.owner }));
   const allT = todoTasks();
-  const pend = progWeek === 0 ? allT.map(t => ({ ...t, d:todoDocs[t.key] })).filter(t => !(t.d && t.d.done)).concat(tareasHuerfanas(allT)).map(t => ({ ...t, owner:ownerOf(t) })) : [];
+  const pend = progWeek === 0 ? allT.map(t => ({ ...t, d:todoDocs[t.key] })).filter(t => !(t.d && t.d.done)).concat(tareasHuerfanas(allT)).filter(visibleHoy).map(t => ({ ...t, owner:ownerOf(t) })) : [];
   const dias = Array.from({ length:7 }, (_, i) => ymd(new Date(new Date(ini + "T12:00:00").getTime() + i * 864e5)));
   const masDias3 = d => ymd(new Date(new Date(d + "T12:00:00").getTime() + 3 * 864e5));
   const ventasUp = sheetVentas.filter(v => /upsell/i.test(v.tipo) && v.d >= ini && v.d <= fin);
@@ -2169,10 +2192,10 @@ function renderProgreso() {
     const R = 46, C = 2 * Math.PI * R;
     // a tiempo = hecha el mismo día en que se le asignó · con atraso = días después
     const conFecha = h.filter(x => x.d.creada);
-    const aTiempo = conFecha.filter(x => diasHabiles(creadaDe(x.d), x.d.doneAt.slice(0, 10)) === 0).length;
-    const tarde = conFecha.filter(x => diasHabiles(creadaDe(x.d), x.d.doneAt.slice(0, 10)) > 0);
+    const aTiempo = conFecha.filter(x => diasHabilesTipo(x.d.tipo, creadaDe(x.d), x.d.doneAt.slice(0, 10)) === 0).length;
+    const tarde = conFecha.filter(x => diasHabilesTipo(x.d.tipo, creadaDe(x.d), x.d.doneAt.slice(0, 10)) > 0);
     const pT = conFecha.length ? Math.round(aTiempo / conFecha.length * 100) : null;
-    const diasTarde = tarde.length ? tarde.reduce((s, x) => s + diasHabiles(creadaDe(x.d), x.d.doneAt.slice(0, 10)), 0) / tarde.length : 0;
+    const diasTarde = tarde.length ? tarde.reduce((s, x) => s + diasHabilesTipo(x.d.tipo, creadaDe(x.d), x.d.doneAt.slice(0, 10)), 0) / tarde.length : 0;
     const puntual = pT == null ? `<div class="punt"><div class="small muted">A tiempo vs con atraso: sin tareas hechas todavía</div></div>` : `<div class="punt">
         <div class="punt-bar"><div style="width:${pT}%;background:#4dab9a"></div><div style="width:${100 - pT}%;background:#e03e3e"></div></div>
         <div class="punt-l"><span><b class="good">${pT}%</b> el día asignado <span class="muted">(${aTiempo})</span></span><span><b class="zero">${100 - pT}%</b> con atraso <span class="muted">(${tarde.length}${tarde.length ? ` · ${(Math.round(diasTarde * 10) / 10).toLocaleString("es-MX")} ${diasTarde === 1 ? "día hábil" : "días hábiles"} en promedio` : ""})</span></span></div>
@@ -2194,6 +2217,33 @@ function renderProgreso() {
     <div class="prog-grid">${PROG_PERSONAS.map(card).join("")}</div>
     <div class="foot">% de cumplimiento = tareas hechas en la semana ÷ (hechas + pendientes de hoy) · semana de lunes a domingo · “el día asignado” = la marcaron como hecha el mismo día en que les apareció; “con atraso” = la marcaron uno o más días hábiles después · lo que aparece sábado o domingo cuenta como asignado el lunes · “clientes contactados” cuenta cada cliente una vez · “cuentas $2,500 que publicaron” = cuentas sin publicar que el ejecutivo marcó como contactadas y publicaron una vacante en los 3 días siguientes · “upsells vendidos” = filas con tipo de pago “Upsell” en la pestaña del mes de la hoja Revenue</div>`;
 }
+let solPauta = null;
+function pintarSolPauta() {
+  let box = document.getElementById("solpauta-root");
+  if (!box) { box = document.createElement("div"); box.id = "solpauta-root"; document.body.appendChild(box); }
+  if (!solPauta) { box.innerHTML = ""; return; }
+  const r = raw.find(v => v.id === solPauta) || {};
+  box.innerHTML = `<div class="nm-ov" data-solclose="1"><div class="nm" role="dialog" aria-label="Solicitar pauta">
+    <div class="nm-h"><div><div class="nm-t">Solicitar pauta</div><div class="v-mail">${emo(r.puesto)} ${esc(r.vacante || "")} · ${esc(r.empresa || "")}</div><div class="v-mail">${r.post ?? 0} postulados · ${r.asist ?? 0} asistencias · le quedan ${r.dias ?? "—"} días</div></div><button class="nm-x" data-solclose="1" aria-label="Cerrar">✕</button></div>
+    <div class="nm-new"><label class="small muted">¿Por qué la quieren pautar?</label>
+      <textarea id="solpauta-txt" rows="3" placeholder="Ej. lleva 6 días con 3 postulados y el cliente necesita contratar esta semana"></textarea>
+      <div class="nm-row"><label class="small muted">Solicita: <select id="solpauta-aut">${NOTA_AUTORES.map(x => `<option${x === (localStorage_get("crm_autor") || "Rodrigo") ? " selected" : ""}>${x}</option>`).join("")}</select></label><button class="btn-primary" data-solsend="1">Enviar</button></div>
+      <div class="small zero" id="solpauta-err" style="margin-top:6px"></div>
+    </div></div></div>`;
+  const ta = document.getElementById("solpauta-txt"); if (ta) ta.focus();
+}
+async function enviarSolPauta() {
+  const ta = document.getElementById("solpauta-txt"), motivo = (ta && ta.value || "").trim();
+  if (!motivo) { document.getElementById("solpauta-err").textContent = "Escribe la razón para poder enviarla."; return; }
+  if (!db || !solPauta) return;
+  const por = document.getElementById("solpauta-aut").value; try { localStorage.setItem("crm_autor", por); } catch (_) {}
+  const r = raw.find(v => v.id === solPauta) || {};
+  const req = { decision:"si", estado:"pendiente", por, at:hoyMx(), vence:r.vence || "", motivo:motivo.slice(0, 1000), origen:"seguimiento" };
+  const vid = solPauta;
+  pautaReq = { ...pautaReq, [vid]:req }; solPauta = null; pintarSolPauta(); render();
+  try { await db.collection("pauta_req").doc(vid).set(req); toast("Enviada a Por pautar"); }
+  catch (_) { const n = { ...pautaReq }; delete n[vid]; pautaReq = n; render(); toast("No se envió"); }
+}
 function renderPorPautar() {
   const q = query.trim().toLowerCase();
   const pend = Object.entries(pautaReq).filter(([, x]) => x.decision === "si" && x.estado === "pendiente").map(([vid, x]) => ({ vid, x, r:raw.find(v => v.id === vid) }))
@@ -2206,7 +2256,8 @@ function renderPorPautar() {
         <div><b>${esc(r.vacante)}</b> · ${esc(r.empresa)}</div>
         <div class="v-mail">${emo(r.puesto)} ${esc(r.puesto || "Sin tipo de puesto")} · ${esc(r.estado)} · ${esc(r.sueldo || "sin sueldo")}</div>
         <div class="v-mail"><b>${r.post}</b> postulados · <b>${r.real}</b> reales · <b>${r.asist}</b> asistencias · <b>${r.contr}</b> contratados · le quedan <b>${r.dias}</b> días</div>
-        <div class="v-mail">Pedida por ${tag(x.por || "—", OWNER_COLOR[x.por] || "gray")} el ${esc(fmtShort(String(x.at).slice(0, 10)))}</div>
+        <div class="v-mail">Pedida por ${tag(x.por || "—", OWNER_COLOR[x.por] || "gray")} el ${esc(fmtShort(String(x.at).slice(0, 10)))}${x.origen === "seguimiento" ? " · desde Seguimiento" : ""}</div>
+        ${x.motivo ? `<div class="queja-box" style="border-left-color:#2383e2;background:rgba(35,131,226,.06)"><b>Motivo:</b> ${esc(x.motivo)}</div>` : ""}
       </div>
       <div class="pp-actions"><button class="btn-primary" data-ppok="${esc(vid)}">Pasar a Pauta</button><button class="end-btn" data-ppno="${esc(vid)}">No pautar</button></div>
     </div>` : `<div class="todo-item"><div class="todo-body"><b>Vacante ya no activa</b><div class="v-mail">Pedida por ${esc(x.por || "—")}</div></div><button class="end-btn" data-ppno="${esc(vid)}">Quitar</button></div>`).join("");
@@ -2264,7 +2315,7 @@ const QUEJA_MIN_NOCONT = 5;
 const lunesDe = d => { const x = new Date(d + "T12:00:00"); const k = (x.getDay() + 6) % 7; x.setDate(x.getDate() - k); return ymd(x); };
 const TODO_OWNERS = ["Rodrigo", "Berny"];
 let todoDocs = {}, todoFilter = "all", todoGrupo = "Cuentas $2,500";
-const TODO_GRUPOS = ["Cuentas $2,500", "Experiencia de candidatos", "Vacantes", "Contrataciones", "Seguimiento", "Decisión de pauta", "Reactivaciones", "Facturas", "Upsells", "Reactivar clientes", "Soporte"];
+const TODO_GRUPOS = ["Cuentas $2,500", "Experiencia de candidatos", "Vacantes", "Contrataciones", "Seguimiento", "Decisión de pauta", "Reactivaciones", "Facturas", "Upsells", "Reactivar clientes", "Soporte", "Recordatorios", "Reintentos"];
 function todoTasks() {
   const tasks = [];
   const hoy = localToday();
@@ -2325,10 +2376,14 @@ function todoTasks() {
       ] });
   });
   // 6) Cancelaron su suscripción en los últimos 6 días (vacantes: avisos de Slack · plan de créditos: sistema)
-  const cut6 = ymd(new Date(new Date(hoy + "T12:00:00").getTime() - 6 * 864e5));
+  // reactivaciones: canceló en los últimos 3 días de mensajes (si canceló jueves a domingo, aparece el lunes)
+  // la tarea sale al día de mensajes siguiente a la cancelación (jueves → lunes) y se puede crear durante 3 días de mensajes
+  const asigCancel = f => laboral(ymd(new Date(new Date(String(f).slice(0, 10) + "T12:00:00").getTime() + 864e5)));
+  const enVentanaCancel = f => { const t0 = asigCancel(f); return t0 <= laboral(hoy) && diasEntre(t0, laboral(hoy), esDiaHab) < 3; };
+  const cut6 = ymd(new Date(new Date(hoy + "T12:00:00").getTime() - 10 * 864e5));
   if (cancelState === "ok") {
     const porMail = {};
-    cancels.filter(c => String(c.cuando).slice(0, 10) >= cut6 && c.email).forEach(c => { (porMail[c.email] ||= []).push(c); });
+    cancels.filter(c => String(c.cuando).slice(0, 10) >= cut6 && enVentanaCancel(c.cuando) && c.email).forEach(c => { (porMail[c.email] ||= []).push(c); });
     Object.entries(porMail).forEach(([mail, cs]) => {
       if (/@chambas\.ai$/i.test(mail)) return;
       const ct = cancelContacts[mail] || {};
@@ -2348,7 +2403,7 @@ function todoTasks() {
         : "que te llegaron pocos candidatos";
       const a = { empresa:ct.empresa || (r && r.empresa) || cs[0].quien || mail, email:mail, tel:ct.tel || (r && r.tel) || "", wa:ct.wa || (r && r.wa) || "" };
       const vac = vacs[0] || "tu vacante";
-      tasks.push({ key:`cancel6:${acc}:${ult.slice(0, 10)}`, acc, grupo:"Reactivaciones", tipo:"cancel6", a, peso:Number(String(ult).replace(/\D/g, "").slice(0, 12)) || 0,
+      tasks.push({ key:`cancel6:${acc}:${ult.slice(0, 10)}`, acc, grupo:"Reactivaciones", tipo:"cancel6", a, asig:asigCancel(ult), peso:Number(String(ult).replace(/\D/g, "").slice(0, 12)) || 0,
         lines:[`Canceló ${cs.length === 1 ? "su suscripción" : cs.length + " suscripciones"} el ${esc(fmtShort(ult.slice(0, 10)))} · ${esc(vacs.join(", "))}`, `Motivo: ${esc(motivos.join(" · ") || "sin motivo")}`, kapsoLine(a.wa, ult.slice(0, 10))],
         msg:o => tipoMot === "candidatos"
           ? `Hola, soy ${o} de Chambas 👋 Vi que cancelaste la renovación de "${vac}" porque ${problema}. Lo sentimos mucho y queremos ayudarte: te ofrecemos 50% de descuento para que vuelvas a publicar tu vacante, y le vamos a dar mayor difusión para que te lleguen más candidatos. ¿Te interesa que te ayude a reactivarla?`
@@ -2360,10 +2415,10 @@ function todoTasks() {
     });
   }
   cohRows.forEach(c => {
-    if (!c.cancel_d || c.cancel_d < cut6 || excluida(c)) return;
+    if (!c.cancel_d || c.cancel_d < cut6 || !enVentanaCancel(c.cancel_d) || excluida(c)) return;
     const ra = riskByAcc[c.acc];
     const a = { empresa:c.empresa, email:c.email, tel:c.tel, wa:c.wa };
-    tasks.push({ key:`cancel6c:${c.sid}:${c.cancel_d}`, acc:c.acc, grupo:"Reactivaciones", tipo:"cancel6", a, peso:0,
+    tasks.push({ key:`cancel6c:${c.sid}:${c.cancel_d}`, acc:c.acc, grupo:"Reactivaciones", tipo:"cancel6", a, peso:0, asig:asigCancel(c.cancel_d),
       lines:[`Canceló su plan de créditos de $2,500 el ${esc(fmtShort(c.cancel_d))}${c.fin ? ` · sus créditos siguen hasta el ${esc(fmtShort(c.fin))}` : ""}`, kapsoLine(c.wa, c.cancel_d)],
       msg:o => `Hola, soy ${o} de Chambas 👋 Vi que cancelaste tu plan de 5 vacantes. ¿Todo bien? Nos ayudaría mucho saber cómo te fue y si hay algo en lo que te podamos apoyar. Tus créditos siguen activos hasta el ${fmtShort(c.fin || "")}.` });
   });
@@ -2429,7 +2484,9 @@ function todoTasks() {
     const r = raw.find(v => normPh(v.wa) === c.ph);
     const espera = c.pide_at && !c.resp_at ? Math.round((Date.now() - new Date(c.pide_at)) / 36e5) : null;
     const mlbl = Object.fromEntries(TK_MOT.map(([k, l]) => [k, l.replace(/^[^\wÁÉÍÓÚáéíóúñÑ]+\s*/, "")]));
-    tasks.push({ key:`tk:${id}`, acc:du.acc || ("tel:" + c.ph), fixedOwner:du.owner, grupo:"Soporte", tipo:"ticket", peso:espera || 0,
+    const asigT = asignacionTicket(c.pide_at || c.hasta);
+    if (asigT > hoy) return;
+    tasks.push({ key:`tk:${id}`, asig:asigT, acc:du.acc || ("tel:" + c.ph), fixedOwner:du.owner, grupo:"Soporte", tipo:"ticket", peso:espera || 0,
       a:{ empresa:du.empresa || (r && r.empresa) || "+" + c.ph, email:(r && r.email) || "", tel:(r && r.tel) || "+" + c.ph, wa:c.ph },
       head:`Atender ticket de <b>${esc(du.empresa || (r && r.empresa) || "+" + c.ph)}</b> · ${esc(du.motivoDueno)}`,
       lines:[`${(c.motivos || []).map(m => esc(mlbl[m] || m)).join(" · ")} · “${esc(c.resumen || "")}”`,
@@ -2454,7 +2511,8 @@ function todoTasks() {
     });
   }
   // 12) Candidatos que marcaron "me contrataron" el día anterior (el lunes: viernes, sábado y domingo) → confirmar con el cliente
-  const diasContr = (() => { const x = new Date(hoy + "T12:00:00"), w = x.getDay(); const n = w === 1 ? 3 : w === 0 ? 2 : w === 6 ? 1 : 1; return Array.from({ length:n }, (_, k) => ymd(new Date(x.getTime() - (k + 1) * 864e5))); })();
+  // marcó "contratado" un día → la tarea sale al siguiente día de mensajes (lunes a jueves)
+  const diasContr = (() => { const out = []; const x = new Date(hoy + "T12:00:00"); for (let k = 1; k <= 7; k++) { const d = ymd(new Date(x.getTime() - k * 864e5)); if (laboralMsg(ymd(new Date(new Date(d + "T12:00:00").getTime() + 864e5))) === laboralMsg(hoy)) out.push(d); } return out; })();
   const porVacC = {};
   contratados.filter(c => !esSi(c.confirmado) && c.marco && diasContr.includes(String(c.marco).slice(0, 10))).forEach(c => { (porVacC[c.vid] ||= []).push(c); });
   Object.entries(porVacC).forEach(([vid, cs]) => {
@@ -2468,7 +2526,7 @@ function todoTasks() {
       msg:o => `Hola, soy ${o} de Chambas 👋 ${n === 1 ? "Uno de tus candidatos" : n + " de tus candidatos"} de la vacante "${r.vacante}" nos ${n === 1 ? "dijo" : "dijeron"} que ya ${n === 1 ? "lo contrataste" : "los contrataste"} 🎉 ¿Nos confirmas si ${n === 1 ? "quedó" : "quedaron"}? Así actualizamos tu vacante.` });
   });
   // 4 y 5) Seguimiento a los 8 y 15 días del periodo de la vacante (el lunes también entra lo que tocaba el fin de semana)
-  const extraFinde = new Date(hoy + "T12:00:00").getDay() === 1 ? 2 : 0;
+  const extraFinde = new Date(hoy + "T12:00:00").getDay() === 1 ? 3 : 0;
   raw.forEach(r => {
     if (r.jobType === "ai_work" || r.dias == null) return;
     if (noContactar[r.acc] || /@chambas\.ai$/i.test(r.email || "")) return;
@@ -2483,6 +2541,7 @@ function todoTasks() {
       lines:[`Día ${dia} de 30 · <b>${r.post}</b> postulados · <b>${r.real}</b> reales · <b>${r.asist}</b> asistencias · <b>${r.contr}</b> contratados · vence ${esc(fmtShort(r.vence))}`, quejaKapso(r.wa)].filter(Boolean),
       msg:o => `Hola, soy ${o} de Chambas 👋 Te comparto cómo va tu vacante "${r.vacante}" a 15 días: ${r.post} postulados, ${r.real} candidatos que pasaron tus filtros y ${r.asist} ${r.asist === 1 ? "asistencia registrada" : "asistencias registradas"}. ¿Cómo te ha ido con las entrevistas? Si quieres, te ayudamos a mejorar los resultados.` });
   });
+  tasks.push(...tareasComunicacion(hoy));
   tasks.sort((x, y) => (x.grupo === y.grupo ? (y.peso || 0) - (x.peso || 0) : 0));
   return tasks;
 }
@@ -2491,12 +2550,14 @@ const TODO_TIPOS = {
   fac_emi:{ titulo:"Emitir factura", instr:"Ya mandaron sus datos fiscales: emitir la factura y enviarla. Al terminar, pica “Marcar emitida”. Si al final no se va a emitir, pica “Marcar no emitida”. Las dos se actualizan también en la sección Facturas." },
   ticket:{ titulo:"Tickets de soporte sin resolver", instr:"Tickets donde el cliente pidió hablar con una persona, quiere cancelar o quiere comprar más, y que siguen sin resolverse. Contestar en Kapso y marcar como hecha cuando quede resuelto." },
   react:{ titulo:"Clientes sin publicar en más de 3 meses", instr:"Clientes que llevan más de 3 meses sin publicar, no tienen vacantes activas ni plan, y no tienen quejas en Kapso. Escribirles para saber si tienen una nueva vacante que cubrir. El botón de WhatsApp abre con el mensaje escrito." },
+  rec:{ titulo:"¿Te contestó el cliente?", instr:"El día hábil anterior le escribiste a estos clientes. Marca si te contestaron: si no, la tarea vuelve en Reintentos para escribirles otra vez (máximo 3 mensajes en 3 días distintos)." },
+  reint:{ titulo:"Volver a escribir", instr:"Estos clientes no contestaron tu mensaje anterior. Escríbeles otra vez y marca la tarea como hecha; al día siguiente te va a llegar el recordatorio de si contestaron." },
   contrato:{ titulo:"Confirmar contratación con el cliente", instr:"Candidatos que ayer marcaron que ya los contrataron (el lunes también los del fin de semana). Confirmar con el cliente si de verdad quedaron contratados. La lista completa está en Insights › Contratados." },
   upsell:{ titulo:"Ofrecer el paquete de $2,500", instr:"Clientes que pagan por vacante y: tienen una vacante con más de 40 postulados en sus primeros 10 días, o han publicado más de una vacante con nosotros y tienen una vacante con buen rendimiento (semáforo verde). Ofrecerles el paquete de 5 vacantes por $2,500." },
   pdec:{ titulo:"¿Pautar o no pautar?", instr:"Vacantes con suscripción vigente, publicadas hace más de 48 horas, con 18+ días por delante y bajo rendimiento (menos de 10 postulados, menos de 5 asistencias y 0 contratados). Revisa la vacante y decide: si la quieres pautar, le llega a Marina en “Por pautar”." },
   pack0:{ titulo:"Cuentas sin publicar vacante", instr:"Contactar para presionar a publicar: ayúdales a subir su primera vacante y recuérdales que tienen 5 créditos pagados." },
   vac0:{ titulo:"Vacantes sin postulados", instr:"Revisar la vacante: que el sueldo sea competitivo para el puesto y la zona, que el puesto esté bien clasificado, que la dirección sea correcta, que los filtros de la pre-entrevista no sean demasiado duros y que la descripción sea clara. Ajustarla (o pautarla) y avisarle al cliente qué se cambió." },
-  cancel6:{ titulo:"Cancelaron su suscripción (últimos 6 días)", instr:"Mandar mensaje de seguimiento. Si cancelaron por falta de candidatos (pocos, no se presentaron, no contestaron o no cumplían el perfil) o por presupuesto: ofrecer 50% de descuento para volver a publicar y mayor difusión. Si ya la cubrieron: felicitarlos y dejar la puerta abierta. Revisa antes si ya hablaron con Kapso para no repetir. El botón de WhatsApp abre con el mensaje escrito." },
+  cancel6:{ titulo:"Cancelaron su suscripción (últimos 3 días)", instr:"Mandar mensaje de seguimiento. Si cancelaron por falta de candidatos (pocos, no se presentaron, no contestaron o no cumplían el perfil) o por presupuesto: ofrecer 50% de descuento para volver a publicar y mayor difusión. Si ya la cubrieron: felicitarlos y dejar la puerta abierta. Revisa antes si ya hablaron con Kapso para no repetir. El botón de WhatsApp abre con el mensaje escrito." },
   seg8:{ titulo:"Seguimiento de 8 días", instr:"Mandar mensaje de seguimiento preguntando si necesitan ayuda con algo. El botón de WhatsApp ya abre con el mensaje escrito; ajústalo si hace falta." },
   seg10:{ titulo:"Seguimiento de 10 días", instr:"Mandar mensaje de seguimiento preguntando si necesitan ayuda con algo. El botón de WhatsApp ya abre con el mensaje escrito; ajústalo si hace falta." },
   seg15:{ titulo:"Seguimiento de 15 días", instr:"Mandar mensaje de seguimiento con cómo van sus postulaciones y asistencias. El botón de WhatsApp ya abre con el mensaje escrito con sus números." },
@@ -2534,7 +2595,7 @@ async function todoAssign(tasks) {
   for (const t of needDoc) {
     const owner = ownerOf(t) || pick();
     const txt = h => String(h || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-    const doc = { owner, tipo:t.tipo, acc:t.acc || null, creada:hoyMx(), done:false,
+    const doc = { owner, tipo:t.tipo, acc:t.acc || null, creada:hoyMx(), ...(t.asig ? { asig:t.asig } : {}), done:false,
       snap:{ grupo:t.grupo, head:txt(t.head) || `Contactar a ${t.a.empresa || t.a.email || ""}`, line:txt((t.lines || [])[0]).slice(0, 200), empresa:t.a.empresa || "", email:t.a.email || "", tel:t.a.tel || "", wa:t.a.wa || "" } };
     todoDocs = { ...todoDocs, [t.key]:doc };
     try { await db.collection("todo").doc(t.key).set(doc); } catch (_) {}
@@ -2549,7 +2610,8 @@ async function todoToggle(key, done) {
   const doneOwner = done ? (tk ? ownerOf({ ...tk, d:prev }) : null) || prev.owner : null;
   const doc = { ...prev, done, doneAt:done ? hoyMx() : null, doneBy:done ? (myId || null) : null, doneOwner, acc:prev.acc || (tk && tk.acc) || null };
   todoDocs = { ...todoDocs, [key]:doc }; render();
-  try { await db.collection("todo").doc(key).set(doc); } catch (_) { todoDocs = { ...todoDocs, [key]:prev }; render(); toast("No se guardó"); }
+  try { await db.collection("todo").doc(key).set(doc); } catch (_) { todoDocs = { ...todoDocs, [key]:prev }; render(); toast("No se guardó"); return; }
+  if (done && tk && (COM_CAT[tk.tipo] || tk.tipo === "reint")) registrarContacto(tk, doneOwner);
 }
 async function todoReassign(acc, key) {
   if (!db) return;
@@ -2568,22 +2630,45 @@ const OWNER_COLOR = { Rodrigo:"blue", Berny:"purple", Moy:"green" };
 const TODO_FILTRO_PERSONAS = ["Rodrigo", "Berny", "Moy"];
 const TODO_PERSISTE = new Set(["seg8", "seg10", "seg15", "cancel6"]);
 // fines de semana no se trabaja: lo que aparece sábado o domingo cuenta como asignado el lunes
-const laboral = f => { if (!f) return f; const x = new Date(f + "T12:00:00"); const w = x.getDay(); if (w === 6) x.setDate(x.getDate() + 2); else if (w === 0) x.setDate(x.getDate() + 1); return ymd(x); };
-const diasHabiles = (a, b) => { if (!a || !b || b <= a) return 0; let n = 0; const x = new Date(a + "T12:00:00"); const end = new Date(b + "T12:00:00"); while (x < end) { x.setDate(x.getDate() + 1); const w = x.getDay(); if (w !== 0 && w !== 6) n++; } return n; };
-const creadaDe = d => laboral(String((d && d.creada) || "").slice(0, 10));
+// Días de trabajo: tareas con mensajes a clientes solo de lunes a jueves (viernes, sábado y domingo → lunes).
+// El resto (soporte, revisar vacantes, pauta, emitir facturas) de lunes a viernes.
+const TIPOS_MSG = new Set(["pack0", "quejas", "seg8", "seg10", "seg15", "fac_sol", "upsell", "react", "contrato"]);
+const esDiaMsg = f => { const w = new Date(f + "T12:00:00").getDay(); return w >= 1 && w <= 4; };
+const esDiaHab = f => { const w = new Date(f + "T12:00:00").getDay(); return w >= 1 && w <= 5; };
+const siguienteDia = (f, ok) => { if (!f) return f; const x = new Date(f + "T12:00:00"); while (!ok(ymd(x))) x.setDate(x.getDate() + 1); return ymd(x); };
+const laboral = f => siguienteDia(f, esDiaHab);
+const laboralMsg = f => siguienteDia(f, esDiaMsg);
+const diasEntre = (a, b, ok) => { if (!a || !b || b <= a) return 0; let n = 0; const x = new Date(a + "T12:00:00"); const end = new Date(b + "T12:00:00"); while (x < end) { x.setDate(x.getDate() + 1); if (ok(ymd(x))) n++; } return n; };
+const diasHabiles = (a, b) => diasEntre(a, b, esDiaHab);
+const diasHabilesTipo = (tipo, a, b) => diasEntre(a, b, TIPOS_MSG.has(tipo) ? esDiaMsg : esDiaHab);
+const laboralTipo = (tipo, f) => TIPOS_MSG.has(tipo) ? laboralMsg(f) : laboral(f);
+const creadaDe = d => d && d.asig ? String(d.asig).slice(0, 10) : laboralTipo(d && d.tipo, String((d && d.creada) || "").slice(0, 10));
+// hoy se pueden ver las tareas con mensajes a clientes? (no en viernes, sábado ni domingo)
+const hoyMsg = () => esDiaMsg(localToday());
+// soporte: viernes hasta las 4 pm y entre semana hasta las 8 pm; después pasa al siguiente día hábil
+function asignacionTicket(iso) {
+  if (!iso) return localToday();
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone:"America/Mexico_City", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", hour12:false }).formatToParts(new Date(iso)).map(x => [x.type, x.value]));
+  const d = `${p.year}-${p.month}-${p.day}`, h = Number(p.hour === "24" ? 0 : p.hour), w = new Date(d + "T12:00:00").getDay();
+  const corte = w === 5 ? 16 : 20;
+  const base = (esDiaHab(d) && h >= corte) ? ymd(new Date(new Date(d + "T12:00:00").getTime() + 864e5)) : d;
+  return laboral(base);
+}
 // tareas que ya no aparecen en la lista de hoy (p. ej. pasó la ventana del seguimiento) pero nadie marcó como hechas
 function tareasHuerfanas(tasks) {
   const live = new Set(tasks.map(t => t.key));
-  return Object.entries(todoDocs).filter(([k, d]) => !d.done && !live.has(k) && TODO_PERSISTE.has(d.tipo) && creadaDe(d) < laboral(localToday())).map(([k, d]) => {
+  return Object.entries(todoDocs).filter(([k, d]) => !d.done && !live.has(k) && TODO_PERSISTE.has(d.tipo) && creadaDe(d) < laboralTipo(d.tipo, localToday())).map(([k, d]) => {
     const sn = d.snap || {};
     return { key:k, acc:d.acc || null, tipoVista:d.tipo === "seg10" ? "seg8" : d.tipo, grupo:(sn.grupo === "Renovaciones" ? "Reactivaciones" : sn.grupo) || (d.tipo === "cancel6" ? "Reactivaciones" : "Seguimiento"), tipo:d.tipo, d, huerfana:true,
       a:{ empresa:sn.empresa || "", email:sn.email || "", tel:sn.tel || "", wa:sn.wa || "" }, head:esc(sn.head || "Tarea pendiente"), lines:sn.line ? [esc(sn.line)] : [] };
   });
 }
+const esMsgTask = t => TIPOS_MSG.has(t.tipo) || (t.tipo === "reint" && TIPOS_MSG.has(t.tipoOrig));
+const visibleHoy = t => (hoyMsg() || !esMsgTask(t)) && esDiaHab(localToday());
 function todoAtrasadas() {
   const tasks = todoTasks();
   const hoy = localToday();
-  return tasks.map(t => ({ ...t, d:todoDocs[t.key] || null })).filter(t => t.d && !t.d.done && creadaDe(t.d) && creadaDe(t.d) < laboral(hoy)).concat(tareasHuerfanas(tasks));
+  return tasks.map(t => ({ ...t, d:todoDocs[t.key] || null })).filter(t => t.d && !t.d.done && creadaDe(t.d) && creadaDe(t.d) < laboralTipo(t.tipo, hoy)).concat(tareasHuerfanas(tasks)).filter(visibleHoy);
 }
 function renderTodo(mode = "hoy") {
   if ((packState === "loading" || packState === "idle") && !packRows.length) return skeleton();
@@ -2593,7 +2678,7 @@ function renderTodo(mode = "hoy") {
   setTimeout(() => todoAssign(tasks), 0);
   const q = query.trim().toLowerCase();
   const hoyD = localToday();
-  const base = mode === "atr" ? todoAtrasadas() : tasks.map(t => ({ ...t, d:todoDocs[t.key] || null })).filter(t => !(t.d && !t.d.done && creadaDe(t.d) && creadaDe(t.d) < laboral(hoyD)));
+  const base = (mode === "atr" ? todoAtrasadas() : tasks.map(t => ({ ...t, d:todoDocs[t.key] || null })).filter(t => !(t.d && !t.d.done && creadaDe(t.d) && creadaDe(t.d) < laboralTipo(t.tipo, hoyD)))).filter(t => (t.d && t.d.done) || visibleHoy(t));
   const withDoc = base.filter(t => !q || `${t.a.empresa} ${t.a.email}`.toLowerCase().includes(q));
   const open = withDoc.filter(t => !(t.d && t.d.done));
   const done = mode === "atr" ? [] : withDoc.filter(t => t.d && t.d.done);
@@ -2616,14 +2701,15 @@ function renderTodo(mode = "hoy") {
   const item = t => {
     const a = t.a, d = t.d, isDone = d && d.done;
     return `<div class="todo-item${isDone ? " done" : ""}">
-      ${t.tipo === "pdec" ? "" : `<label class="todo-check"><input type="checkbox" data-todochk="${esc(t.key)}" ${isDone ? "checked" : ""} ${d && db ? "" : "disabled"} aria-label="Marcar como hecha"></label>`}
+      ${t.tipo === "pdec" || t.tipo === "rec" ? "" : `<label class="todo-check"><input type="checkbox" data-todochk="${esc(t.key)}" ${isDone ? "checked" : ""} ${d && db ? "" : "disabled"} aria-label="Marcar como hecha"></label>`}
       <span class="tl-btns">${a.wa ? `<a class="wa-btn" href="https://wa.me/${esc(a.wa)}${t.msg ? "?text=" + encodeURIComponent(t.msg(t.owner || "tu ejecutivo")) : ""}" target="_blank" rel="noopener" title="${t.msg ? "Abrir WhatsApp con el mensaje escrito" : "Escribirle por WhatsApp"}">${WA_ICON}</a>` : ""}${kapsoBtn(a.wa)}</span>
       <div class="todo-body">
         <div>${t.head || `Contactar a <b>${esc(a.empresa || a.email)}</b>`}</div>
         <div class="v-mail">${esc(a.email)}${a.tel ? " · " + esc(a.tel) : ""}</div>
         ${(t.lines || []).map(l => `<div class="v-mail">${l}</div>`).join("")}
-        ${mode === "atr" && d ? (() => { const n = diasHabiles(creadaDe(d), hoyD); return `<div class="small" style="margin-top:3px"><span class="tag ${n >= 3 ? "red" : "orange"}">Pendiente desde ${esc(fmtShort(creadaDe(d)))} · ${n} ${n === 1 ? "día" : "días"} de atraso</span>${t.huerfana ? ' <span class="muted">· ya pasó su ventana, pero sigue sin marcarse</span>' : ""}</div>`; })() : ""}
+        ${mode === "atr" && d ? (() => { const n = diasHabilesTipo(t.tipo, creadaDe(d), hoyD); return `<div class="small" style="margin-top:3px"><span class="tag ${n >= 3 ? "red" : "orange"}">Pendiente desde ${esc(fmtShort(creadaDe(d)))} · ${n} ${n === 1 ? "día" : "días"} de atraso</span>${t.huerfana ? ' <span class="muted">· ya pasó su ventana, pero sigue sin marcarse</span>' : ""}</div>`; })() : ""}
         ${t.tipo === "pdec" && !isDone ? `<div class="pp-actions" style="margin-top:8px"><button class="btn-primary" data-pdec="si" data-key="${esc(t.key)}">La quiero pautar</button><button class="end-btn" data-pdec="no" data-key="${esc(t.key)}">No la quiero pautar</button></div>` : ""}
+        ${t.tipo === "rec" && !isDone ? `<div class="pp-actions" style="margin-top:8px"><button class="btn-primary" data-comresp="mismo" data-cid="${esc(t.contactoId)}">Sí, el mismo día</button><button class="end-btn" data-comresp="despues" data-cid="${esc(t.contactoId)}">Sí, después</button><button class="end-btn" data-comresp="no" data-cid="${esc(t.contactoId)}">No contestó</button></div>` : ""}
         ${(t.tipo === "fac_emi" || t.tipo === "fac_sol") && !isDone ? `<div class="pp-actions" style="margin-top:8px">${t.tipo === "fac_emi" ? `<button class="btn-primary" data-facemit="${esc(t.key)}">Marcar emitida</button>` : ""}<button class="end-btn" data-facnoemit="${esc(t.key)}" title="Se solicitó pero no se va a emitir">Marcar no emitida</button></div>` : ""}
         ${t.tipo === "pdec" && isDone ? `<div class="vs" style="text-align:left">${d.decision === "si" ? "Pedida para pautar" : "Decidió no pautarla"}</div>` : ""}
         ${t.msg && !isDone ? `<details class="todo-msg"><summary>Ver mensaje sugerido</summary><div>${esc(t.msg(t.owner || "tu ejecutivo"))}</div><button class="linkbtn small" data-copymsg="${esc(t.key)}">Copiar</button></details>` : ""}
@@ -2634,7 +2720,7 @@ function renderTodo(mode = "hoy") {
     </div>`;
   };
   const html = Object.entries(groups).map(([g, tipos]) => `<div class="todo-group">${Object.entries(tipos).map(([tp, arr]) => `<div class="todo-type"><div class="todo-type-h"><b>${esc(TODO_TIPOS[tp].titulo)}</b> <span class="muted">· ${arr.length}</span></div><div class="todo-instr">${esc(TODO_TIPOS[tp].instr)}</div>${arr.map(item).join("")}</div>`).join("")}</div>`).join("");
-  const resumenAtr = mode === "atr" ? `<div class="atr-sum">${TODO_FILTRO_PERSONAS.map(o => { const mine = open.filter(t => t.owner === o); if (!mine.length) return `<div class="atr-p">${tag(o, OWNER_COLOR[o] || "gray")} <span class="good">al día ✓</span></div>`; const vieja = mine.map(t => creadaDe(t.d)).filter(Boolean).sort()[0]; const n = vieja ? diasHabiles(vieja, hoyD) : 0; return `<div class="atr-p">${tag(o, OWNER_COLOR[o] || "gray")} <b class="${mine.length >= 10 ? "zero" : "low"}">${mine.length}</b> ${mine.length === 1 ? "atrasada" : "atrasadas"} <span class="muted small">· la más vieja de hace ${n} ${n === 1 ? "día" : "días"}</span></div>`; }).join("")}</div>` : "";
+  const resumenAtr = mode === "atr" ? `<div class="atr-sum">${TODO_FILTRO_PERSONAS.map(o => { const mine = open.filter(t => t.owner === o); if (!mine.length) return `<div class="atr-p">${tag(o, OWNER_COLOR[o] || "gray")} <span class="good">al día ✓</span></div>`; const n = Math.max(0, ...mine.map(t => t.d ? diasHabilesTipo(t.tipo, creadaDe(t.d), hoyD) : 0)); return `<div class="atr-p">${tag(o, OWNER_COLOR[o] || "gray")} <b class="${mine.length >= 10 ? "zero" : "low"}">${mine.length}</b> ${mine.length === 1 ? "atrasada" : "atrasadas"} <span class="muted small">· la más vieja de hace ${n} ${n === 1 ? "día" : "días"}</span></div>`; }).join("")}</div>` : "";
   const diagC = todoGrupo === "Contrataciones" ? `<div class="small muted" style="margin-top:8px">Contrataciones: ${contrState === "loading" ? "cargando…" : contrState === "error" ? `<span class="zero">no se pudieron leer (${esc(contrErr)})</span> · <button class="linkbtn small" data-contrretry>Reintentar</button>` : `${contratados.length} candidatos marcaron “contratado” en vacantes activas · ${new Set(contratados.map(c => c.vid)).size} vacantes · ${contratados.filter(c => raw.some(r => r.id === c.vid)).length} en vacantes del CRM${contrErr ? ` · ${esc(contrErr)}` : ""} · fecha: ${contrCol && contrCol !== "-" ? esc(contrCol) : "sin columna"}`}</div>` : "";
   return `${resumenAtr}<div class="rchips" style="margin-top:14px">${chips}</div>
     <div class="seg2 todo-gtabs">${gtabs}</div>
@@ -2959,6 +3045,7 @@ function renderNotaModal() {
       <div><span>En ChambasAI</span><b>${esc(c.antig)}</b><small>desde ${esc(fmtShort(c.desde))}</small></div>
       <div><span>Última publicación</span><b>${esc(fmtShort(c.ultima))}</b></div>
       <div><span>Ha invertido</span><b>${money(c.invertido)}</b><small>${c.fuenteInv}</small></div>
+      ${(() => { const cm = comCliente(c.acc, c.email, c.wa); return `<div><span>Contesta mensajes</span><b>${cm.pct == null ? "—" : cm.pct + "%"}</b><small>${cm.total ? `${cm.si} de ${cm.conResp} con respuesta · ${cm.total} mensajes` : "sin mensajes registrados"}</small></div>`; })()}
       <div><span>Método de pago</span><b>${c.metodo ? metodoTag(c.metodo) : "—"}</b><small>${Object.entries(c.metodos || {}).map(([m, n]) => `${m}: ${n}`).join(" · ")}</small></div>
     </div>` : "";
   return `<div class="nm-ov" data-notaclose="1"><div class="nm" role="dialog" aria-label="Notas del cliente">
@@ -3138,6 +3225,107 @@ function renderActividad() {
     <div class="foot">Vista privada (solo se abre con #actividad en el link) · horas de México según el momento en que marcaron cada tarea como hecha · cada cuadro es una hora; más oscuro = más tareas marcadas en esa hora · solo días hábiles</div>`;
 }
 
+// ---------- Comunicación: recordatorios "¿te contestó?", reintentos e historial por cliente ----------
+let contactos = {};
+const COM_CAT = { pack0:"Cuentas $2,500 sin publicar", quejas:"Quejas de candidatos", seg8:"Seguimiento 8 días", seg10:"Seguimiento 8 días", seg15:"Seguimiento 15 días", cancel6:"Cancelaciones", fac_sol:"Datos de factura", upsell:"Upsells", react:"Reactivar clientes", contrato:"Contrataciones" };
+const MAX_INTENTOS = 3;
+// guarda que se le escribió al cliente (al marcar como hecha una tarea de mensaje o un reintento)
+async function registrarContacto(tk, owner) {
+  if (!db || !tk) return;
+  const tipo = tk.tipo === "reint" ? tk.tipoOrig : tk.tipo;
+  if (!COM_CAT[tipo]) return;
+  const chain = tk.tipo === "reint" ? tk.chain : tk.key;
+  const intento = tk.tipo === "reint" ? tk.intento : 1;
+  const id = `${chain}#${intento}`;
+  if (contactos[id]) return;
+  const a = tk.a || {};
+  const doc = { chain, intento, tipo, acc:tk.acc || "", empresa:a.empresa || "", email:a.email || "", tel:normPh(a.wa || a.tel || ""), owner:owner || "",
+    at:hoyMx(), titulo:String(tk.head || "").replace(/<[^>]+>/g, "").slice(0, 160), msg:tk.msg ? tk.msg(owner || "tu ejecutivo").slice(0, 1500) : (tk.msgTxt || ""), respuesta:null };
+  contactos = { ...contactos, [id]:doc };
+  try { await db.collection("contactos").doc(id).set(doc); } catch (_) {}
+}
+async function responderContacto(id, resp) {
+  const prev = contactos[id]; if (!prev || !db) return;
+  const doc = { ...prev, respuesta:resp, respAt:hoyMx() };
+  contactos = { ...contactos, [id]:doc }; render();
+  try { await db.collection("contactos").doc(id).set(doc); } catch (_) { contactos = { ...contactos, [id]:prev }; render(); toast("No se guardó"); return; }
+  const k = `rec:${id}`; if (todoDocs[k] && !todoDocs[k].done) todoToggle(k, true);
+}
+// días distintos en que se le escribió por la misma cadena
+const diasCadena = chain => new Set(Object.values(contactos).filter(c => c.chain === chain).map(c => String(c.at).slice(0, 10))).size;
+function tareasComunicacion(hoy) {
+  const out = [];
+  const lista = Object.entries(contactos).map(([id, c]) => ({ id, ...c }));
+  // 1) recordatorios: al siguiente día hábil (lunes a viernes) preguntar si contestó
+  lista.filter(c => !c.respuesta).forEach(c => {
+    const asig = laboral(ymd(new Date(new Date(String(c.at).slice(0, 10) + "T12:00:00").getTime() + 864e5)));
+    if (asig > hoy) return;
+    const cat = COM_CAT[c.tipo] || "mensaje";
+    out.push({ key:`rec:${c.id}`, asig, acc:c.acc, fixedOwner:c.owner || null, grupo:"Recordatorios", tipo:"rec", contactoId:c.id, a:{ empresa:c.empresa, email:c.email, tel:c.tel ? fmtTelRaw(c.tel) : "", wa:c.tel },
+      head:`¿Te contestó <b>${esc(c.empresa || c.email || "el cliente")}</b> respecto a tu mensaje de ${esc(cat.toLowerCase())}?`,
+      lines:[`Le escribiste el ${esc(fmtShort(String(c.at).slice(0, 10)))}, ${esc(String(c.at).slice(11, 16))}${c.intento > 1 ? ` · intento ${c.intento} de ${MAX_INTENTOS}` : ""}`] });
+  });
+  // 2) reintentos: si no contestó, se vuelve a asignar la misma tarea (máximo 3 mensajes en 3 días distintos)
+  const ultimos = {}; lista.forEach(c => { if (!ultimos[c.chain] || c.intento > ultimos[c.chain].intento) ultimos[c.chain] = c; });
+  Object.values(ultimos).forEach(c => {
+    if (c.respuesta !== "no" || c.intento >= MAX_INTENTOS || diasCadena(c.chain) >= MAX_INTENTOS) return;
+    const asig = laboral(String(c.respAt || hoyMx()).slice(0, 10));
+    const sig = c.intento + 1, cat = COM_CAT[c.tipo] || "mensaje";
+    out.push({ key:`reint:${c.chain}:${sig}`, asig, acc:c.acc, fixedOwner:c.owner || null, grupo:"Reintentos", tipo:"reint", tipoOrig:c.tipo, chain:c.chain, intento:sig, a:{ empresa:c.empresa, email:c.email, tel:c.tel ? fmtTelRaw(c.tel) : "", wa:c.tel },
+      head:`Volver a escribir a <b>${esc(c.empresa || c.email || "el cliente")}</b> · ${esc(cat)}`,
+      lines:[`No contestó tu mensaje del ${esc(fmtShort(String(c.at).slice(0, 10)))} · intento ${sig} de ${MAX_INTENTOS}`, c.titulo ? `Tarea original: ${esc(c.titulo)}` : ""].filter(Boolean),
+      msgTxt:c.msg || "", msg:c.msg ? (() => c.msg) : null });
+  });
+  return out;
+}
+// resumen de comunicación de un cliente (para su ficha)
+function comCliente(acc, email, tel) {
+  const em = String(email || "").toLowerCase(), ph = normPh(tel || "");
+  const cs = Object.values(contactos).filter(c => (acc && c.acc === acc) || (em && String(c.email).toLowerCase() === em) || (ph && c.tel === ph));
+  const resp = cs.filter(c => c.respuesta), si = resp.filter(c => c.respuesta !== "no");
+  return { total:cs.length, conResp:resp.length, si:si.length, pct:resp.length ? Math.round(si.length / resp.length * 100) : null };
+}
+let comRange = "30";
+function renderComunicacion() {
+  const hoy = localToday();
+  const desde = comRange === "semana" ? lunesDe(hoy) : comRange === "30" ? ymd(new Date(Date.now() - 29 * 864e5)) : "0000";
+  const cs = Object.entries(contactos).map(([id, c]) => ({ id, ...c })).filter(c => String(c.at).slice(0, 10) >= desde);
+  const resp = cs.filter(c => c.respuesta), si = resp.filter(c => c.respuesta !== "no"), no = resp.filter(c => c.respuesta === "no");
+  const tiempo = c => c.respuesta === "mismo" ? 0 : diasHabiles(String(c.at).slice(0, 10), String(c.respAt || c.at).slice(0, 10)) || 1;
+  const prom = si.length ? si.reduce((s, c) => s + tiempo(c), 0) / si.length : null;
+  const pct = (a, b) => b ? Math.round(a / b * 100) + "%" : "—";
+  const cadenas = {}; cs.forEach(c => { (cadenas[c.chain] ||= []).push(c); });
+  const sinResp = Object.values(cadenas).filter(arr => arr.filter(c => c.respuesta === "no").length >= MAX_INTENTOS || (arr.every(c => c.respuesta === "no") && new Set(arr.map(c => String(c.at).slice(0, 10))).size >= MAX_INTENTOS)).length;
+  const fmtT = d => d == null ? "—" : d < 0.5 ? "el mismo día" : `${(Math.round(d * 10) / 10).toLocaleString("es-MX")} ${d === 1 ? "día" : "días"}`;
+  const kp = (l, v, sub, col = "var(--text)") => `<div class="tk-kpi" style="cursor:default"><div class="tk-kl">${l}</div><div class="tk-kv" style="color:${col}">${v}</div>${sub ? `<div class="small muted">${sub}</div>` : ""}</div>`;
+  const tabla = (titulo, grupos, etiqueta) => { const rows = Object.entries(grupos).map(([k, arr]) => { const r = arr.filter(c => c.respuesta), s = r.filter(c => c.respuesta !== "no"); const t = s.length ? s.reduce((x, c) => x + tiempo(c), 0) / s.length : null; return { k, n:arr.length, r:r.length, s:s.length, t }; }).sort((a, b) => (b.r ? b.s / b.r : -1) - (a.r ? a.s / a.r : -1));
+    return `<div class="rsec"><div class="rsec-h">${titulo}</div><div class="tablewrap"><table style="min-width:640px"><thead><tr><th><button>${etiqueta}</button></th><th class="num"><button>Mensajes</button></th><th class="num"><button>Contestaron</button></th><th class="num"><button>No contestaron</button></th><th class="num"><button>% contesta</button></th><th class="num"><button>Tardan en contestar</button></th></tr></thead><tbody>${rows.map(x => `<tr><td>${esc(x.k)}</td><td class="num">${x.n}</td><td class="num">${x.s}</td><td class="num">${x.r - x.s}</td><td class="num"><b class="${x.r && x.s / x.r >= 0.6 ? "good" : x.r && x.s / x.r < 0.35 ? "zero" : "low"}">${pct(x.s, x.r)}</b></td><td class="num">${fmtT(x.t)}</td></tr>`).join("") || '<tr><td colspan="6" class="muted small">Sin datos todavía</td></tr>'}</tbody></table></div></div>`; };
+  const porCat = {}; cs.forEach(c => { (porCat[COM_CAT[c.tipo] || c.tipo] ||= []).push(c); });
+  const porEje = {}; cs.forEach(c => { (porEje[c.owner || "—"] ||= []).push(c); });
+  const porCli = {}; Object.entries(contactos).forEach(([, c]) => { const k = c.acc || c.email || c.tel; (porCli[k] ||= { empresa:c.empresa || c.email, arr:[] }).arr.push(c); });
+  const clis = Object.values(porCli).map(x => { const r = x.arr.filter(c => c.respuesta), s = r.filter(c => c.respuesta !== "no"); return { ...x, n:x.arr.length, r:r.length, s:s.length }; }).filter(x => x.r >= 2);
+  const peores = clis.filter(x => x.s / x.r < 0.5).sort((a, b) => a.s / a.r - b.s / b.r || b.r - a.r).slice(0, 15);
+  const mejores = clis.filter(x => x.s / x.r >= 0.5).sort((a, b) => b.s / b.r - a.s / a.r || b.r - a.r).slice(0, 15);
+  const lCli = arr => arr.map(x => `<tr><td>${esc(x.empresa || "—")}</td><td class="num">${x.n}</td><td class="num">${x.s} de ${x.r}</td><td class="num"><b>${pct(x.s, x.r)}</b></td></tr>`).join("") || '<tr><td colspan="4" class="muted small">Sin datos todavía</td></tr>';
+  const chips = [["semana", "Esta semana"], ["30", "Últimos 30 días"], ["todo", "Todo"]].map(([k, l]) => `<button class="rchip${comRange === k ? " on" : ""}" data-comr="${k}">${l}</button>`).join("");
+  return `<div class="tk-head">${chips}</div>
+    <div class="tk-grid" style="margin-top:12px">
+      ${kp("Mensajes enviados", cs.length, `${cs.length - resp.length} sin saber todavía`)}
+      ${kp("Contestaron", pct(si.length, resp.length), `${si.length} de ${resp.length}`, "#0f7b6c")}
+      ${kp("No contestaron", pct(no.length, resp.length), `${no.length} de ${resp.length}`, "#e03e3e")}
+      ${kp("Tardan en contestar", fmtT(prom), "promedio de los que contestaron")}
+      ${kp("Contestan el mismo día", pct(si.filter(c => c.respuesta === "mismo").length, si.length), "de los que contestaron")}
+      ${kp("Sin respuesta tras 3 intentos", sinResp, "ya no se les vuelve a escribir", "#e03e3e")}
+    </div>
+    ${tabla("Por tipo de mensaje", porCat, "Tipo de mensaje")}
+    ${tabla("Por ejecutivo", porEje, "Ejecutivo")}
+    <div class="prog-grid">
+      <div class="rsec"><div class="rsec-h">Clientes que casi no contestan</div><div class="tablewrap"><table><thead><tr><th><button>Cliente</button></th><th class="num"><button>Mensajes</button></th><th class="num"><button>Contestó</button></th><th class="num"><button>%</button></th></tr></thead><tbody>${lCli(peores)}</tbody></table></div></div>
+      <div class="rsec"><div class="rsec-h">Clientes que sí contestan</div><div class="tablewrap"><table><thead><tr><th><button>Cliente</button></th><th class="num"><button>Mensajes</button></th><th class="num"><button>Contestó</button></th><th class="num"><button>%</button></th></tr></thead><tbody>${lCli(mejores)}</tbody></table></div></div>
+    </div>
+    <div class="foot">Cada vez que alguien marca como hecha una tarea de mensaje a cliente, se guarda el mensaje · al siguiente día hábil le llega un recordatorio “¿te contestó?” · si no contestó, la tarea vuelve en Reintentos (máximo ${MAX_INTENTOS} mensajes en ${MAX_INTENTOS} días distintos) · “tardan en contestar” = días hábiles entre el mensaje y la respuesta, según lo que marcan en el recordatorio · clientes con al menos 2 respuestas registradas</div>`;
+}
+
 function renderDayPanel() {
   const el = $("panel");
   const evs = visible().filter(r => r.vence === dayId).sort((x, y) => x.real - y.real);
@@ -3226,13 +3414,13 @@ function renderInner() {
   if (section === "sop") { if (riskState === "idle") { loadRisk(); return; } $("content").innerHTML = renderSoporte(); return; }
   if (section === "fact") { if (riskState === "idle") { loadRisk(); return; } $("content").innerHTML = renderFacturas(); return; }
   if (section === "todo") { const nAtr = (packRows.length || riskRows.length) ? todoAtrasadas().length : 0; const nPP = Object.values(pautaReq).filter(x => x.decision === "si" && x.estado === "pendiente").length; $("seg").innerHTML = `<button aria-pressed="${todoView === "hoy"}" data-todoview="hoy">Tareas de hoy</button><button aria-pressed="${todoView === "pp"}" data-todoview="pp">Por pautar<span class="n">${nPP}</span></button><button aria-pressed="${todoView === "atr"}" data-todoview="atr">Días anteriores<span class="n ${nAtr ? "zero" : ""}">${nAtr}</span></button><button aria-pressed="${todoView === "prog"}" data-todoview="prog">Progreso</button>`; if (todoView === "pp") { $("content").innerHTML = renderPorPautar(); return; } if (packState === "idle") loadPack(); if (riskState === "idle") loadRisk(); loadHistVacs(); loadPost10(); if (contrState === "idle") loadContratados(); if (cliState === "idle") loadClientes(); if (tkState === "idle") loadTickets(); if (quejasState === "idle") loadQuejas(); if (cohState === "idle") loadCoh(); if (cancelState === "idle") loadCancels(); else if (cancelState === "ok") loadCancelContacts(); if (todoView === "prog") { $("content").innerHTML = renderProgreso(); return; } if (todoView === "atr") { $("content").innerHTML = renderTodo("atr"); return; } $("content").innerHTML = renderTodo(); return; }
-  if (section === "ins") $("seg").innerHTML = [["canc90", "Cancelaciones · 90 días"], ["canc30", "Cancelaciones · 30 días"], ["cancres", "Cancelaciones · 90 vs 30"], ["resp", "Tiempo de respuesta"], ["clientes", "Clientes"], ["contratados", "Contratados"]].map(([id, l]) => `<button aria-pressed="${insView === id}" data-insview="${id}">${l}</button>`).join("");
-  if (section === "ins") { if (cancDState === "idle") loadCancData(); $("content").innerHTML = insView === "contratados" ? renderContratadosIns() : insView === "clientes" ? renderClientes() : insView === "resp" ? renderRespuesta() : insView === "cancres" ? renderCancResumen() : renderCancelaciones(insView === "canc30" ? 30 : 90); if (openId) renderPanel(); return; }
+  if (section === "ins") $("seg").innerHTML = [["canc90", "Cancelaciones · 90 días"], ["canc30", "Cancelaciones · 30 días"], ["cancres", "Cancelaciones · 90 vs 30"], ["resp", "Tiempo de respuesta"], ["clientes", "Clientes"], ["contratados", "Contratados"], ["comunicacion", "Comunicación"]].map(([id, l]) => `<button aria-pressed="${insView === id}" data-insview="${id}">${l}</button>`).join("");
+  if (section === "ins") { if (cancDState === "idle") loadCancData(); $("content").innerHTML = insView === "comunicacion" ? renderComunicacion() : insView === "contratados" ? renderContratadosIns() : insView === "clientes" ? renderClientes() : insView === "resp" ? renderRespuesta() : insView === "cancres" ? renderCancResumen() : renderCancelaciones(insView === "canc30" ? 30 : 90); if (openId) renderPanel(); return; }
   if (section === "cal" && calView === "pack") {
     if (riskState === "idle") loadRisk();
     const sw = `<div class="seg2">${[["seg", "Seguimiento"], ["coh", "Cohortes"]].map(([id, l]) => `<button aria-pressed="${packView === id}" data-packview="${id}">${l}</button>`).join("")}</div>`;
     if (packView === "coh") { if (cohState === "idle") { loadCoh(); } if (sheetState === "idle") loadSheet(); $("content").innerHTML = sw + renderCohortes(); return; }
-    if (packState === "idle") { loadPack(); } $("content").innerHTML = sw + renderPack(); return; }
+    if (packState === "idle") { loadPack(); } if (cohState === "idle") loadCoh(); $("content").innerHTML = sw + renderPack(); return; }
   if (section === "cal" && calView === "mes") { if (riskState === "idle") loadRisk(); if (renewState === "idle") loadRenewals(); if (renovMState === "idle") { loadRenovM(); return; } $("content").innerHTML = renderMes(); return; }
   if (section === "cal" && calView === "resumen") { if (riskState === "idle") loadRisk(); if (renewState === "idle") loadRenewals(); if (renovState === "idle") { loadRenov(); return; } $("content").innerHTML = renderResumen(); return; }
   if (section === "cal" && calView === "riesgo") { if (riskState === "idle") { loadRisk(); return; } $("content").innerHTML = renderRisk(); if (openId) renderPanel(); return; }
@@ -3245,7 +3433,7 @@ function renderInner() {
   const head = COLS.map(c => `<th class="${c.num ? "num" : ""}"><button data-sort="${c.k}">${esc(c.label)}<span class="arr">${sort.k === c.k ? (sort.dir === "asc" ? "↑" : "↓") : ""}</span></button></th>`).join("");
   const body = list.slice(0, shown).map(r => `<tr data-open="${r.id}">
     <td><div class="vcell"><span class="emocol"><span class="emo" title="${esc(r.puesto || "Sin tipo de puesto")}">${emo(r.puesto)}</span>${vacDot(r)}</span><div><div class="v-name">${esc(r.vacante)}</div><div class="v-co">${esc(r.empresa)}</div>${r.email ? `<div class="v-mail">${esc(r.email)}</div>` : ""}${r.tel ? `<div class="v-mail"><a class="tel" href="https://wa.me/${esc(r.wa)}" target="_blank" rel="noopener" title="Abrir en WhatsApp">${esc(r.tel)}</a></div>` : ""}</div></div></td>
-    <td><button class="pauta-btn" data-pauta="${r.id}" aria-label="Cambiar pauta">${pautaTag(r)}</button></td>
+    <td><button class="pauta-btn" data-pauta="${r.id}" aria-label="Cambiar pauta">${pautaTag(r)}</button>${r.pauta !== "Pautada" ? (pautaReq[r.id] && pautaReq[r.id].decision === "si" && pautaReq[r.id].estado === "pendiente" ? `<div style="margin-top:6px">${tag("Pauta solicitada", "blue")}</div>` : `<div style="margin-top:6px"><button class="linkbtn small" data-solpauta="${esc(r.id)}">Solicitar pauta</button></div>`) : ""}</td>
     <td><div class="kcell">${waBtn(r)}${kapsoBtn(r.wa)}${r.kapso ? `<span class="tag ${r.kapso.fromThem ? "red" : "blue"}" title="${esc((r.kapso.fromThem ? "El último mensaje lo mandó el cliente" : "El último mensaje lo mandó Kapso") + " · " + r.kapso.count + (r.kapso.count === 1 ? " conversación" : " conversaciones") + " en " + KAPSO_DAYS + " días")}">💬 ${esc(fmtDate(mxDate(r.kapso.at)))}</span>` : `<span class="muted">${kapsoState === "loading" ? "…" : "—"}</span>`}</div></td>
     <td class="num"><span class="${r.post === 0 ? "zero" : ""}">${r.post}</span></td>
     <td class="num"><span class="${r.real <= 0 ? "zero" : r.real <= 4 ? "low" : ""}">${r.real}</span></td>
@@ -3421,6 +3609,7 @@ async function initDb() {
   if (!db) return;
   let ready = false;
   const timer = setTimeout(() => { if (!ready) { dbNote = "Las marcas de pauta aún no cargan; pueden estar desactualizadas."; render(); } }, 10000);
+  db.collection("contactos").onSnapshot(snap => { const n = {}; snap.docs.forEach(d => { const v = d.data(); if (v) n[d.id] = v; }); contactos = n; render(); }, () => {});
   db.collection("notas").onSnapshot(snap => { const n = {}; snap.docs.forEach(d => { const v = d.data(); if (v) n[d.id] = v; }); notas = n; if (notaOpen) pintarNota(); render(); }, () => {});
   db.collection("tickets").onSnapshot(snap => { const n = {}; snap.docs.forEach(d => { const v = d.data(); if (v) n[d.id] = v; }); tkCls = { ...n, ...Object.fromEntries(Object.entries(tkCls).filter(([k, v]) => !n[k] || (n[k].at || 0) < (v.at || 0))) }; render(); }, () => {});
   db.collection("pauta_req").onSnapshot(snap => { const n = {}; snap.docs.forEach(d => { const v = d.data(); if (v) n[d.id] = v; }); pautaReq = n; render(); }, () => {});
@@ -3441,6 +3630,10 @@ async function initDb() {
 document.addEventListener("click", e => {
   const t = e.target;
   if (popEl && !popEl.contains(t)) closePop();
+  const sp_ = t.closest("[data-solpauta]"); if (sp_) { e.stopPropagation(); solPauta = sp_.dataset.solpauta; pintarSolPauta(); return; }
+  if (t.closest("[data-solsend]")) { enviarSolPauta(); return; }
+  if (t.closest("[data-solclose]") && (t.classList.contains("nm-ov") || t.closest(".nm-x"))) { solPauta = null; pintarSolPauta(); return; }
+  if (t.closest("#solpauta-root .nm")) return;
   const pb = t.closest("[data-pauta]"); if (pb) { e.stopPropagation(); pautaPop(pb, pb.dataset.pauta); return; }
   const f = t.closest("[data-filter]"); if (f) { filterId = f.dataset.filter; shown = PAGE; render(); return; }
   const s = t.closest("[data-sort]"); if (s) { const k = s.dataset.sort; sort = sort.k === k ? { k, dir:sort.dir === "asc" ? "desc" : "asc" } : { k, dir:"asc" }; render(); return; }
@@ -3498,6 +3691,8 @@ document.addEventListener("click", e => {
   const ad_ = t.closest("[data-actdia]"); if (ad_) { actDia = ad_.dataset.actdia; render(); return; }
   if (t.closest("[data-contrretry]")) { contrState = "idle"; contrCol = ""; contrErr = ""; loadContratados(true); return; }
   const cf_ = t.closest("[data-contrf]"); if (cf_) { contrFiltro = cf_.dataset.contrf; render(); return; }
+  const cr_ = t.closest("[data-comresp]"); if (cr_) { responderContacto(cr_.dataset.cid, cr_.dataset.comresp); return; }
+  const cmr_ = t.closest("[data-comr]"); if (cmr_) { comRange = cmr_.dataset.comr; render(); return; }
   const rtr_ = t.closest("[data-rtr]"); if (rtr_) { rtRange = rtr_.dataset.rtr; render(); return; }
   const tkr_ = t.closest("[data-tkr]"); if (tkr_) { tkRange = tkr_.dataset.tkr; tkFiltro = null; render(); return; }
   const tkf_ = t.closest("[data-tkf]"); if (tkf_) { tkFiltro = tkFiltro === tkf_.dataset.tkf || tkf_.dataset.tkf === "noop" ? null : tkf_.dataset.tkf; render(); return; }
