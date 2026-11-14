@@ -212,7 +212,14 @@ button.opt:hover{background:var(--hover-strong)}
 tr.daytoday td{background:var(--hover)}
 .tl-row.wpast{opacity:.75}
 .todo-group{margin:14px 0 26px}
-.todo-gtabs{margin-top:6px}
+.seg2.todo-gtabs{margin-top:6px;display:flex !important;flex-wrap:wrap;width:fit-content;max-width:100%}
+.seg2.todo-gtabs button[aria-pressed="true"]{box-shadow:none !important;color:var(--text) !important}
+.seg2.todo-gtabs.sel-gray button[aria-pressed="true"]{background:rgba(120,119,116,.14) !important}
+.seg2.todo-gtabs.sel-blue button[aria-pressed="true"]{background:rgba(35,131,226,.13) !important}
+.seg2.todo-gtabs.sel-purple button[aria-pressed="true"]{background:rgba(144,101,176,.15) !important}
+.seg2.todo-gtabs.sel-green button[aria-pressed="true"]{background:rgba(15,123,108,.13) !important}
+.todo-macro{margin-top:12px}
+.todo-macro button{font-size:15px;font-weight:600;padding:6px 16px}
 .todo-msg{margin-top:6px;font-size:13px}
 .atr-sum{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg-soft)}
 .atr-p{font-size:14px}
@@ -2113,7 +2120,7 @@ GROUP BY 1`;
   } catch (_) { histKey = ""; }
 }
 let pautaReq = {}, todoView = "hoy", todoSub = "seg8";
-const TODO_SUBTABS = { "Seguimiento":[["seg8", "Seguimiento 8 días"], ["seg15", "Seguimiento 15 días"]], "Facturas":[["fac_sol", "Solicitó factura"], ["fac_emi", "Compartió sus datos"]] };
+const TODO_SUBTABS = { "Seguimiento":[["seg8", "Seguimiento 8 días"], ["seg15", "Seguimiento 15 días"]] };
 function pautaCandidatas() {
   return raw.filter(r => r.jobType !== "ai_work" && r.dias != null && r.dias >= 18 && (30 - r.dias) > 2 && r.post < 10 && r.asist < 5 && r.contr === 0
     && !cancelOf(r) && !(pautaDocs[r.id] && pautaDocs[r.id].status === "Pautada") && !pautaReq[r.id]
@@ -2273,9 +2280,9 @@ function kapsoLine(wa, desde) {
   return `<span class="tag ${despues ? "blue" : "gray"}">💬 Habló con Kapso</span> el ${esc(fmtShort(d))}${despues ? " (después de cancelar)" : " (antes de cancelar)"}${k.fromThem ? ' · <span class="zero">el último mensaje es del cliente</span>' : ""}${rs && rs.texto ? `<div class="small" style="margin-top:3px">“${esc(rs.texto)}”</div>` : ""}`;
 }
 async function loadCancelContacts() {
-  if (!mcp || cancelState !== "ok") return;
+  if (!mcp || (cancelState !== "ok" && falloState !== "ok")) return;
   const cut = ymd(new Date(Date.now() - 7 * 864e5));
-  const emails = [...new Set(cancels.filter(c => String(c.cuando).slice(0, 10) >= cut).map(c => c.email).filter(e => /^[a-z0-9@._+-]+$/i.test(e)))];
+  const emails = [...new Set(cancels.filter(c => String(c.cuando).slice(0, 10) >= cut).map(c => c.email).concat(fallidos.map(f => f.email)).filter(e => /^[a-z0-9@._+-]+$/i.test(e)))];
   const key = emails.sort().join(",");
   if (!emails.length || key === cancelContactsKey) return;
   cancelContactsKey = key;
@@ -2315,7 +2322,14 @@ const QUEJA_MIN_NOCONT = 5;
 const lunesDe = d => { const x = new Date(d + "T12:00:00"); const k = (x.getDay() + 6) % 7; x.setDate(x.getDate() - k); return ymd(x); };
 const TODO_OWNERS = ["Rodrigo", "Berny"];
 let todoDocs = {}, todoFilter = "all", todoGrupo = "Cuentas $2,500";
-const TODO_GRUPOS = ["Cuentas $2,500", "Experiencia de candidatos", "Vacantes", "Contrataciones", "Seguimiento", "Decisión de pauta", "Reactivaciones", "Facturas", "Upsells", "Reactivar clientes", "Soporte", "Recordatorios", "Reintentos"];
+const TODO_MACROS = [
+  ["Vacantes", ["Cuentas $2,500", "Sin postulaciones", "Decisión de pauta", "Retro candidatos", "Contrataciones"]],
+  ["Revenue", ["Cancelaciones", "Pagos fallidos", "Upsells", "Reactivaciones"]],
+  ["Atención a cliente", ["Seguimiento", "Factura", "Soporte", "Recordatorios", "Reintentos"]],
+];
+const TODO_GRUPOS = TODO_MACROS.flatMap(m => m[1]);
+const macroDe = g => (TODO_MACROS.find(m => m[1].includes(g)) || TODO_MACROS[0])[0];
+let todoMacro = "Vacantes";
 function todoTasks() {
   const tasks = [];
   const hoy = localToday();
@@ -2346,14 +2360,14 @@ function todoTasks() {
     if (!califica) {
       if (lastDone) {
         const all = {}; qr.items.filter(it => it.d <= corte).forEach(it => { all[it.k] = (all[it.k] || 0) + 1; });
-        tasks.push({ key:lastDone[0], acc:qr.acc, grupo:"Experiencia de candidatos", tipo:"quejas", a, peso:0,
+        tasks.push({ key:lastDone[0], acc:qr.acc, grupo:"Retro candidatos", tipo:"quejas", a, peso:0,
           lines:[Object.entries(all).sort((x, y) => y[1] - x[1]).map(([k, n]) => `<b>${n}</b> ${n === 1 ? "reporte" : "reportes"}: “${esc(QUEJA_LBL[k] || k)}”`).join(" · ")] });
       }
       return;
     }
     const porVac = {}; items.forEach(it => { porVac[it.vac] = (porVac[it.vac] || 0) + 1; });
     const ultima = items.map(it => it.d).sort().pop();
-    tasks.push({ key:openDoc ? openDoc[0] : `${pref}${corte || "inicio"}`, acc:qr.acc, grupo:"Experiencia de candidatos", tipo:"quejas", a, peso:noCont + quejas * 3, prevOwner:lastDone ? lastDone[1].owner : null,
+    tasks.push({ key:openDoc ? openDoc[0] : `${pref}${corte || "inicio"}`, acc:qr.acc, grupo:"Retro candidatos", tipo:"quejas", a, peso:noCont + quejas * 3, prevOwner:lastDone ? lastDone[1].owner : null,
       lines:[
         ...(corte ? [`<span class="zero">Volvió a tener reportes</span> después de marcarla como hecha el ${esc(fmtShort(corte))}`] : []),
         Object.entries(cnt).sort((x, y) => y[1] - x[1]).map(([k, n]) => `<b>${n}</b> ${n === 1 ? "reporte" : "reportes"}: “${esc(QUEJA_LBL[k] || k)}”`).join(" · "),
@@ -2368,7 +2382,7 @@ function todoTasks() {
     if (!desde) return;
     const dias = Math.round((new Date(hoy + "T12:00:00") - new Date(desde + "T12:00:00")) / 864e5);
     if (dias < 5) return;
-    tasks.push({ key:`vac0:${r.id}`, acc:r.acc, grupo:"Vacantes", tipo:"vac0", a:{ empresa:r.empresa, email:r.email, tel:r.tel, wa:r.wa }, peso:dias,
+    tasks.push({ key:`vac0:${r.id}`, acc:r.acc, grupo:"Sin postulaciones", tipo:"vac0", a:{ empresa:r.empresa, email:r.email, tel:r.tel, wa:r.wa }, peso:dias,
       head:`Revisar la vacante <b>${esc(r.vacante)}</b> · ${esc(r.empresa)}`,
       lines:[
         `${emo(r.puesto)} ${esc(r.puesto || "Sin tipo de puesto")} · ${esc(r.estado)} · ${esc(r.sueldo || "sin sueldo")}`,
@@ -2403,7 +2417,7 @@ function todoTasks() {
         : "que te llegaron pocos candidatos";
       const a = { empresa:ct.empresa || (r && r.empresa) || cs[0].quien || mail, email:mail, tel:ct.tel || (r && r.tel) || "", wa:ct.wa || (r && r.wa) || "" };
       const vac = vacs[0] || "tu vacante";
-      tasks.push({ key:`cancel6:${acc}:${ult.slice(0, 10)}`, acc, grupo:"Reactivaciones", tipo:"cancel6", a, asig:asigCancel(ult), peso:Number(String(ult).replace(/\D/g, "").slice(0, 12)) || 0,
+      tasks.push({ key:`cancel6:${acc}:${ult.slice(0, 10)}`, acc, grupo:"Cancelaciones", tipo:"cancel6", a, asig:asigCancel(ult), peso:Number(String(ult).replace(/\D/g, "").slice(0, 12)) || 0,
         lines:[`Canceló ${cs.length === 1 ? "su suscripción" : cs.length + " suscripciones"} el ${esc(fmtShort(ult.slice(0, 10)))} · ${esc(vacs.join(", "))}`, `Motivo: ${esc(motivos.join(" · ") || "sin motivo")}`, kapsoLine(a.wa, ult.slice(0, 10))],
         msg:o => tipoMot === "candidatos"
           ? `Hola, soy ${o} de Chambas 👋 Vi que cancelaste la renovación de "${vac}" porque ${problema}. Lo sentimos mucho y queremos ayudarte: te ofrecemos 50% de descuento para que vuelvas a publicar tu vacante, y le vamos a dar mayor difusión para que te lleguen más candidatos. ¿Te interesa que te ayude a reactivarla?`
@@ -2418,7 +2432,7 @@ function todoTasks() {
     if (!c.cancel_d || c.cancel_d < cut6 || !enVentanaCancel(c.cancel_d) || excluida(c)) return;
     const ra = riskByAcc[c.acc];
     const a = { empresa:c.empresa, email:c.email, tel:c.tel, wa:c.wa };
-    tasks.push({ key:`cancel6c:${c.sid}:${c.cancel_d}`, acc:c.acc, grupo:"Reactivaciones", tipo:"cancel6", a, peso:0, asig:asigCancel(c.cancel_d),
+    tasks.push({ key:`cancel6c:${c.sid}:${c.cancel_d}`, acc:c.acc, grupo:"Cancelaciones", tipo:"cancel6", a, peso:0, asig:asigCancel(c.cancel_d),
       lines:[`Canceló su plan de créditos de $2,500 el ${esc(fmtShort(c.cancel_d))}${c.fin ? ` · sus créditos siguen hasta el ${esc(fmtShort(c.fin))}` : ""}`, kapsoLine(c.wa, c.cancel_d)],
       msg:o => `Hola, soy ${o} de Chambas 👋 Vi que cancelaste tu plan de 5 vacantes. ¿Todo bien? Nos ayudaría mucho saber cómo te fue y si hay algo en lo que te podamos apoyar. Tus créditos siguen activos hasta el ${fmtShort(c.fin || "")}.` });
   });
@@ -2436,10 +2450,10 @@ function todoTasks() {
     const d = x.d || {};
     const a = { empresa:x.nombre, email:x.email, tel:x.tel, wa:x.wa };
     const ped = d.req_last || d.solicito_at || "";
-    if (x.etapa === "solicito") tasks.push({ key:`fac:sol:${x.key}:${String(ped).slice(0, 10)}`, acc:x.key, grupo:"Facturas", tipo:"fac_sol", a, facWa:x.wa, peso:-Number(String(ped).replace(/\D/g, "").slice(0, 12) || 0),
+    if (false && x.etapa === "solicito") tasks.push({ key:`fac:sol:${x.key}:${String(ped).slice(0, 10)}`, acc:x.key, grupo:"Factura", tipo:"fac_sol", a, facWa:x.wa, peso:-Number(String(ped).replace(/\D/g, "").slice(0, 12) || 0),
       lines:[`Pidió factura el ${esc(fFecha(ped))}${d.texto ? ` · “${esc(d.texto.slice(0, 120))}”` : ""}`, kapsoLine(x.wa, String(ped).slice(0, 10))],
       msg:o => `Hola, soy ${o} de Chambas 👋 Recibimos tu solicitud de factura. Para emitirla, ¿me compartes tu Constancia de Situación Fiscal en PDF? Si no la tienes a la mano, también me sirve tu RFC, razón social, código postal, régimen fiscal y el correo al que te la enviamos.` });
-    if (x.etapa === "datos") tasks.push({ key:`fac:emi:${x.key}:${String(d.datos_last || d.datos_at || ped).slice(0, 10)}`, acc:x.key, grupo:"Facturas", tipo:"fac_emi", a, peso:-Number(String(d.datos_last || ped).replace(/\D/g, "").slice(0, 12) || 0), facWa:x.wa,
+    if (x.etapa === "datos") tasks.push({ key:`fac:emi:${x.key}:${String(d.datos_last || d.datos_at || ped).slice(0, 10)}`, acc:x.key, grupo:"Factura", tipo:"fac_emi", a, peso:-Number(String(d.datos_last || ped).replace(/\D/g, "").slice(0, 12) || 0), facWa:x.wa,
       lines:[`Compartió sus datos el ${esc(fFecha(d.datos_last || d.datos_at))} · ${d.rfc ? `RFC <b>${esc(d.rfc)}</b>` : "RFC no detectado"}${d.adjunto ? ` · <a href="${esc(d.adjunto)}" target="_blank" rel="noopener">Ver constancia</a>` : ""}`,
         ...(d.enviada_at && (!d.req_last || d.enviada_at > d.req_last) ? [`<span style="color:var(--orange-text)">Kapso dice que ya la envió (${esc(fFecha(d.enviada_at))}) — confirma y márcala como emitida</span>`] : []),
         kapsoLine(x.wa, String(ped).slice(0, 10))],
@@ -2504,7 +2518,7 @@ function todoTasks() {
       if (quejaKapso(c.wa)) return;
       cliInvertido(c);
       const puesto = c.ultimaVac || "tu última vacante";
-      tasks.push({ key:`react:${c.acc}:${c.ultima}`, acc:c.acc, fixedOwner:"Moy", grupo:"Reactivar clientes", tipo:"react", a:{ empresa:c.empresa, email:c.email, tel:c.tel, wa:c.wa }, peso:c.invertido,
+      tasks.push({ key:`react:${c.acc}:${c.ultima}`, acc:c.acc, fixedOwner:"Moy", grupo:"Reactivaciones", tipo:"react", a:{ empresa:c.empresa, email:c.email, tel:c.tel, wa:c.wa }, peso:c.invertido,
         lines:[`<b>${dias}</b> días sin publicar · última vacante: <b>${esc(puesto)}</b> (${esc(fmtShort(c.ultima))})`,
           `${c.vacantes} ${c.vacantes === 1 ? "vacante publicada" : "vacantes publicadas"} · cliente desde ${esc(fmtShort(c.desde))} · ha invertido ${money(c.invertido)}`],
         msg:o => `Hola, soy ${o} de Chambas 👋 Ya pasaron ${dias} días desde que publicaste tu última vacante con nosotros (${puesto}). ¿Tienes alguna nueva vacante que quieras cubrir? Con gusto te ayudo a publicarla.` });
@@ -2524,6 +2538,34 @@ function todoTasks() {
       lines:[`<span class="tag green">🎉 ${n} ${n === 1 ? "candidato marcó" : "candidatos marcaron"} que ${n === 1 ? "lo contrataron" : "los contrataron"}</span> · ${cs.map(c => `<b>${esc(fmtShort(String(c.marco).slice(0, 10)))}${String(c.marco).length > 10 ? ", " + esc(String(c.marco).slice(11, 16)) : ""}</b>`).sort().join(" · ")}${contrColAprox ? " (aprox.)" : ""}`,
         `${emo(r.puesto)} ${esc(r.puesto || "")} · ${r.post} postulados · ${r.asist} asistencias · ${r.contr} contratados en el CRM`],
       msg:o => `Hola, soy ${o} de Chambas 👋 ${n === 1 ? "Uno de tus candidatos" : n + " de tus candidatos"} de la vacante "${r.vacante}" nos ${n === 1 ? "dijo" : "dijeron"} que ya ${n === 1 ? "lo contrataste" : "los contrataste"} 🎉 ¿Nos confirmas si ${n === 1 ? "quedó" : "quedaron"}? Así actualizamos tu vacante.` });
+  });
+  // 13) Pagos fallidos: el pago no pasó y la suscripción NO se canceló → contactar (lunes a jueves)
+  const ultFallo = {};
+  fallidos.forEach(f => { if (!ultFallo[f.pid] || f.cuando > ultFallo[f.pid].cuando) ultFallo[f.pid] = f; });
+  const limFallo = ymd(new Date(new Date(hoy + "T12:00:00").getTime() - 10 * 864e5));
+  Object.values(ultFallo).forEach(f => {
+    const dia = f.cuando.slice(0, 10);
+    if (dia < limFallo) return;
+    if (cancelByPay[f.pid]) return; // canceló: va a Reactivaciones
+    const ren = (renewByPay[f.pid] || []).some(e => e.cuando > f.cuando); if (ren) return; // ya se cobró después
+    const ct = cancelContacts[f.email] || {};
+    const r = raw.find(v => (v.payIds || []).includes(f.pid)) || raw.find(v => (v.email || "").toLowerCase() === f.email);
+    const acc = ct.acc || (r && r.acc) || ("mail:" + f.email);
+    if (noContactar[acc] || /@chambas\.ai$/i.test(f.email || "")) return;
+    const a = { empresa:ct.empresa || (r && r.empresa) || f.quien || f.email, email:f.email, tel:ct.tel || (r && r.tel) || "", wa:ct.wa || (r && r.wa) || "" };
+    const vac = f.vacante && !/sin asignar/i.test(f.vacante) ? f.vacante : (r && r.vacante) || "tu vacante";
+    tasks.push({ key:`pagofallo:${f.pid}:${dia}`, acc, grupo:"Pagos fallidos", tipo:"pagofallo", a, asig:laboralMsg(dia), peso:f.monto,
+      head:`Pago fallido de <b>${esc(a.empresa)}</b> · ${esc(vac)}`,
+      lines:[`<span class="tag red">El pago no pasó</span> el ${esc(fmtShort(dia))}, ${esc(f.cuando.slice(11, 16))} · ${money(f.monto)}${f.reintenta ? " · Stripe va a reintentar el cobro" : ""}`, `La suscripción sigue activa (no la canceló)`],
+      msg:o => `Hola, soy ${o} de Chambas 👋 Te escribo porque el pago de tu vacante "${vac}" (${money(f.monto)}) no pasó. ¿Nos ayudas a revisar tu tarjeta o método de pago? Si prefieres, también puedes pagar por transferencia y te comparto los datos. Así tu vacante sigue activa sin interrupciones.` });
+  });
+  packRows.filter(a => a.status === "past_due" && !a.cae).forEach(a => {
+    if (excluida(a)) return;
+    const dia = a.ini || hoy;
+    tasks.push({ key:`pagofallo:plan:${a.sid}:${a.fin || dia}`, acc:a.acc, grupo:"Pagos fallidos", tipo:"pagofallo", a:{ empresa:a.empresa, email:a.email, tel:a.tel, wa:a.wa }, peso:2500,
+      head:`Pago fallido de <b>${esc(a.empresa)}</b> · Plan de 5 vacantes`,
+      lines:[`<span class="tag red">Pago vencido</span> del plan de $2,500 · la suscripción sigue activa (no la canceló)`],
+      msg:o => `Hola, soy ${o} de Chambas 👋 Te escribo porque el pago de tu plan de 5 vacantes ($2,500) no pasó. ¿Nos ayudas a revisar tu tarjeta o método de pago? Si prefieres, también puedes pagar por transferencia y te comparto los datos.` });
   });
   // 4 y 5) Seguimiento a los 8 y 15 días del periodo de la vacante (el lunes también entra lo que tocaba el fin de semana)
   const extraFinde = new Date(hoy + "T12:00:00").getDay() === 1 ? 3 : 0;
@@ -2550,6 +2592,7 @@ const TODO_TIPOS = {
   fac_emi:{ titulo:"Emitir factura", instr:"Ya mandaron sus datos fiscales: emitir la factura y enviarla. Al terminar, pica “Marcar emitida”. Si al final no se va a emitir, pica “Marcar no emitida”. Las dos se actualizan también en la sección Facturas." },
   ticket:{ titulo:"Tickets de soporte sin resolver", instr:"Tickets donde el cliente pidió hablar con una persona, quiere cancelar o quiere comprar más, y que siguen sin resolverse. Contestar en Kapso y marcar como hecha cuando quede resuelto." },
   react:{ titulo:"Clientes sin publicar en más de 3 meses", instr:"Clientes que llevan más de 3 meses sin publicar, no tienen vacantes activas ni plan, y no tienen quejas en Kapso. Escribirles para saber si tienen una nueva vacante que cubrir. El botón de WhatsApp abre con el mensaje escrito." },
+  pagofallo:{ titulo:"Su pago no pasó", instr:"El cobro falló pero el cliente NO canceló su suscripción. Escribirle para que revise su método de pago o pague por transferencia. Desaparece sola cuando el cobro pasa o si cancela." },
   rec:{ titulo:"¿Te contestó el cliente?", instr:"El día hábil anterior le escribiste a estos clientes. Marca si te contestaron: si no, la tarea vuelve en Reintentos para escribirles otra vez (máximo 3 mensajes en 3 días distintos)." },
   reint:{ titulo:"Volver a escribir", instr:"Estos clientes no contestaron tu mensaje anterior. Escríbeles otra vez y marca la tarea como hecha; al día siguiente te va a llegar el recordatorio de si contestaron." },
   contrato:{ titulo:"Confirmar contratación con el cliente", instr:"Candidatos que ayer marcaron que ya los contrataron (el lunes también los del fin de semana). Confirmar con el cliente si de verdad quedaron contratados. La lista completa está en Insights › Contratados." },
@@ -2632,7 +2675,7 @@ const TODO_PERSISTE = new Set(["seg8", "seg10", "seg15", "cancel6"]);
 // fines de semana no se trabaja: lo que aparece sábado o domingo cuenta como asignado el lunes
 // Días de trabajo: tareas con mensajes a clientes solo de lunes a jueves (viernes, sábado y domingo → lunes).
 // El resto (soporte, revisar vacantes, pauta, emitir facturas) de lunes a viernes.
-const TIPOS_MSG = new Set(["pack0", "quejas", "seg8", "seg10", "seg15", "fac_sol", "upsell", "react", "contrato"]);
+const TIPOS_MSG = new Set(["pack0", "quejas", "seg8", "seg10", "seg15", "fac_sol", "upsell", "react", "contrato", "pagofallo"]);
 const esDiaMsg = f => { const w = new Date(f + "T12:00:00").getDay(); return w >= 1 && w <= 4; };
 const esDiaHab = f => { const w = new Date(f + "T12:00:00").getDay(); return w >= 1 && w <= 5; };
 const siguienteDia = (f, ok) => { if (!f) return f; const x = new Date(f + "T12:00:00"); while (!ok(ymd(x))) x.setDate(x.getDate() + 1); return ymd(x); };
@@ -2659,7 +2702,7 @@ function tareasHuerfanas(tasks) {
   const live = new Set(tasks.map(t => t.key));
   return Object.entries(todoDocs).filter(([k, d]) => !d.done && !live.has(k) && TODO_PERSISTE.has(d.tipo) && creadaDe(d) < laboralTipo(d.tipo, localToday())).map(([k, d]) => {
     const sn = d.snap || {};
-    return { key:k, acc:d.acc || null, tipoVista:d.tipo === "seg10" ? "seg8" : d.tipo, grupo:(sn.grupo === "Renovaciones" ? "Reactivaciones" : sn.grupo) || (d.tipo === "cancel6" ? "Reactivaciones" : "Seguimiento"), tipo:d.tipo, d, huerfana:true,
+    return { key:k, acc:d.acc || null, tipoVista:d.tipo === "seg10" ? "seg8" : d.tipo, grupo:(d.tipo === "cancel6" ? "Cancelaciones" : sn.grupo) || "Seguimiento", tipo:d.tipo, d, huerfana:true,
       a:{ empresa:sn.empresa || "", email:sn.email || "", tel:sn.tel || "", wa:sn.wa || "" }, head:esc(sn.head || "Tarea pendiente"), lines:sn.line ? [esc(sn.line)] : [] };
   });
 }
@@ -2690,13 +2733,19 @@ function renderTodo(mode = "hoy") {
     .map(([id, l, n]) => `<button class="rchip${todoFilter === id ? " on" : ""}" data-todof="${esc(id)}">${OWNER_COLOR[id] ? `<span class="dot ${OWNER_COLOR[id]}"></span>` : ""}${l} <b>${n}</b></button>`).join("");
   // al elegir a una persona, solo se ven las pestañas donde tiene tareas
   const porPersona = TODO_FILTRO_PERSONAS.includes(todoFilter);
-  const gruposVis = porPersona ? TODO_GRUPOS.filter(g => show.some(t => t.grupo === g)) : TODO_GRUPOS;
+  const cuenta = g => show.filter(t => t.grupo === g).length;
+  const selCol = OWNER_COLOR[todoFilter] || "gray";
+  const macrosVis = porPersona ? TODO_MACROS.filter(m => m[1].some(g => cuenta(g))) : TODO_MACROS;
+  if (macrosVis.length && !macrosVis.some(m => m[0] === todoMacro)) todoMacro = macrosVis[0][0];
+  const mtabs = macrosVis.map(([m, gs]) => `<button aria-pressed="${todoMacro === m}" data-todomacro="${esc(m)}">${esc(m)}<span class="n">${gs.reduce((x, g) => x + cuenta(g), 0)}</span></button>`).join("");
+  const enMacro = (TODO_MACROS.find(m => m[0] === todoMacro) || TODO_MACROS[0])[1];
+  const gruposVis = porPersona ? enMacro.filter(g => cuenta(g)) : enMacro;
   if (gruposVis.length && !gruposVis.includes(todoGrupo)) todoGrupo = gruposVis[0];
   const gtabs = gruposVis.map(g => `<button aria-pressed="${todoGrupo === g}" data-todog="${esc(g)}">${esc(g)}<span class="n">${show.filter(t => t.grupo === g).length}</span></button>`).join("");
   const groups = {};
   const subs = TODO_SUBTABS[todoGrupo];
   if (subs && !subs.some(([k]) => k === todoSub)) todoSub = subs[0][0];
-  const subHtml = subs ? `<div class="seg2 todo-gtabs">${subs.map(([k, l]) => `<button aria-pressed="${todoSub === k}" data-todosub="${k}">${l}<span class="n">${show.filter(t => t.grupo === todoGrupo && (t.tipoVista || t.tipo) === k).length}</span></button>`).join("")}</div>` : "";
+  const subHtml = subs ? `<div class="seg2 todo-gtabs sel-${selCol}">${subs.map(([k, l]) => `<button aria-pressed="${todoSub === k}" data-todosub="${k}">${l}<span class="n">${show.filter(t => t.grupo === todoGrupo && (t.tipoVista || t.tipo) === k).length}</span></button>`).join("")}</div>` : "";
   show.filter(t => t.grupo === todoGrupo && (!subs || (t.tipoVista || t.tipo) === todoSub)).forEach(t => { ((groups[t.grupo] ||= {})[t.tipo] ||= []).push(t); });
   const item = t => {
     const a = t.a, d = t.d, isDone = d && d.done;
@@ -2723,7 +2772,8 @@ function renderTodo(mode = "hoy") {
   const resumenAtr = mode === "atr" ? `<div class="atr-sum">${TODO_FILTRO_PERSONAS.map(o => { const mine = open.filter(t => t.owner === o); if (!mine.length) return `<div class="atr-p">${tag(o, OWNER_COLOR[o] || "gray")} <span class="good">al día ✓</span></div>`; const n = Math.max(0, ...mine.map(t => t.d ? diasHabilesTipo(t.tipo, creadaDe(t.d), hoyD) : 0)); return `<div class="atr-p">${tag(o, OWNER_COLOR[o] || "gray")} <b class="${mine.length >= 10 ? "zero" : "low"}">${mine.length}</b> ${mine.length === 1 ? "atrasada" : "atrasadas"} <span class="muted small">· la más vieja de hace ${n} ${n === 1 ? "día" : "días"}</span></div>`; }).join("")}</div>` : "";
   const diagC = todoGrupo === "Contrataciones" ? `<div class="small muted" style="margin-top:8px">Contrataciones: ${contrState === "loading" ? "cargando…" : contrState === "error" ? `<span class="zero">no se pudieron leer (${esc(contrErr)})</span> · <button class="linkbtn small" data-contrretry>Reintentar</button>` : `${contratados.length} candidatos marcaron “contratado” en vacantes activas · ${new Set(contratados.map(c => c.vid)).size} vacantes · ${contratados.filter(c => raw.some(r => r.id === c.vid)).length} en vacantes del CRM${contrErr ? ` · ${esc(contrErr)}` : ""} · fecha: ${contrCol && contrCol !== "-" ? esc(contrCol) : "sin columna"}`}</div>` : "";
   return `${resumenAtr}<div class="rchips" style="margin-top:14px">${chips}</div>
-    <div class="seg2 todo-gtabs">${gtabs}</div>
+    <div class="seg2 todo-gtabs todo-macro sel-${selCol}">${mtabs}</div>
+    <div class="seg2 todo-gtabs sel-${selCol}">${gtabs}</div>
     ${subHtml}${diagC}
     ${!db ? `<div class="note">En esta vista no se pueden guardar tareas.</div>` : ""}
     ${html || `<div class="state"><b>${todoFilter === "done" ? "Todavía no hay tareas hechas" : "No hay tareas pendientes"}</b></div>`}
@@ -3227,7 +3277,7 @@ function renderActividad() {
 
 // ---------- Comunicación: recordatorios "¿te contestó?", reintentos e historial por cliente ----------
 let contactos = {};
-const COM_CAT = { pack0:"Cuentas $2,500 sin publicar", quejas:"Quejas de candidatos", seg8:"Seguimiento 8 días", seg10:"Seguimiento 8 días", seg15:"Seguimiento 15 días", cancel6:"Cancelaciones", fac_sol:"Datos de factura", upsell:"Upsells", react:"Reactivar clientes", contrato:"Contrataciones" };
+const COM_CAT = { pagofallo:"Pagos fallidos", pack0:"Cuentas $2,500 sin publicar", quejas:"Retro candidatos", seg8:"Seguimiento 8 días", seg10:"Seguimiento 8 días", seg15:"Seguimiento 15 días", cancel6:"Cancelaciones", fac_sol:"Datos de factura", upsell:"Upsells", react:"Reactivaciones", contrato:"Contrataciones" };
 const MAX_INTENTOS = 3;
 // guarda que se le escribió al cliente (al marcar como hecha una tarea de mensaje o un reintento)
 async function registrarContacto(tk, owner) {
@@ -3326,6 +3376,46 @@ function renderComunicacion() {
     <div class="foot">Cada vez que alguien marca como hecha una tarea de mensaje a cliente, se guarda el mensaje · al siguiente día hábil le llega un recordatorio “¿te contestó?” · si no contestó, la tarea vuelve en Reintentos (máximo ${MAX_INTENTOS} mensajes en ${MAX_INTENTOS} días distintos) · “tardan en contestar” = días hábiles entre el mensaje y la respuesta, según lo que marcan en el recordatorio · clientes con al menos 2 respuestas registradas</div>`;
 }
 
+// ---------- Pagos fallidos (avisos "Pago de vacante fallido" de Slack + plan de créditos con pago vencido) ----------
+let fallidos = [], falloState = "idle", falloErr = "";
+function parseFallidos(text) {
+  const out = [];
+  String(text || "").split(/\n(?=\d+\. #)/).forEach(b => {
+    if (!/Pago de vacante fallido/i.test(b)) return;
+    const g = re => { const m = b.match(re); return m ? m[1].trim() : ""; };
+    const pid = g(/Payment ID:\s*([0-9a-f-]{36})/i).toLowerCase();
+    const cuando = g(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2}):\d{2} C[SD]T/);
+    if (!pid || !cuando) return;
+    out.push({ pid, cuando, email:g(/Usuario:[^<\n]*<mailto:([^|>]+)/i).toLowerCase(), quien:g(/Usuario:\s*([^(<\n]+)/i), vacante:g(/Vacante:\s*([^\n]+)/i), plan:g(/Plan:\s*([^\n]+)/i),
+      monto:Number(String(g(/Monto:\s*\$?\s*([\d,\.]+)/i)).replace(/,/g, "")) || 0, reintenta:/reintentar/i.test(b), motivo:g(/Motivo:\s*([^\n]+)/i) });
+  });
+  return out;
+}
+async function loadFallidos(fresh = false) {
+  if (!mcp || falloState === "loading") return;
+  falloState = "loading";
+  const after = String(Math.floor((Date.now() - 15 * 864e5) / 1000));
+  const all = [];
+  try {
+    let cursor = null;
+    for (let i = 0; i < 30; i++) {
+      const args = { query:`"Pago de vacante fallido" in:<#${SLACK_CHANNEL}>`, include_bots:true, limit:20, response_format:"concise", sort:"timestamp", after };
+      if (cursor) args.cursor = cursor;
+      const res = await mcp.callTool(SLACK_SERVER, "slack_search_public", args, { cache:{ staleTime:5 * 60 * 1000, gcTime:24 * 3600 * 1000, refresh:fresh } });
+      let p = res.payload; if (typeof p === "string") { try { p = JSON.parse(p); } catch (_) { p = { results:p }; } }
+      const found = parseFallidos(p?.results || p?.messages || "");
+      all.push(...found);
+      const m = String(p?.pagination_info || "").match(/cursor:?\s*`([^`]+)`/);
+      cursor = m ? m[1] : null;
+      if (!cursor || !found.length) break;
+    }
+    const seen = new Set();
+    fallidos = all.filter(e => { const k = e.pid + e.cuando; if (seen.has(k)) return false; seen.add(k); return true; });
+    falloState = "ok"; falloErr = "";
+  } catch (e) { falloState = "error"; falloErr = (e && (e.code || e.message)) || "error"; }
+  render();
+}
+
 function renderDayPanel() {
   const el = $("panel");
   const evs = visible().filter(r => r.vence === dayId).sort((x, y) => x.real - y.real);
@@ -3413,7 +3503,7 @@ function renderInner() {
   if (loadState === "loading" && !raw.length) { $("content").innerHTML = skeleton(); return; }
   if (section === "sop") { if (riskState === "idle") { loadRisk(); return; } $("content").innerHTML = renderSoporte(); return; }
   if (section === "fact") { if (riskState === "idle") { loadRisk(); return; } $("content").innerHTML = renderFacturas(); return; }
-  if (section === "todo") { const nAtr = (packRows.length || riskRows.length) ? todoAtrasadas().length : 0; const nPP = Object.values(pautaReq).filter(x => x.decision === "si" && x.estado === "pendiente").length; $("seg").innerHTML = `<button aria-pressed="${todoView === "hoy"}" data-todoview="hoy">Tareas de hoy</button><button aria-pressed="${todoView === "pp"}" data-todoview="pp">Por pautar<span class="n">${nPP}</span></button><button aria-pressed="${todoView === "atr"}" data-todoview="atr">Días anteriores<span class="n ${nAtr ? "zero" : ""}">${nAtr}</span></button><button aria-pressed="${todoView === "prog"}" data-todoview="prog">Progreso</button>`; if (todoView === "pp") { $("content").innerHTML = renderPorPautar(); return; } if (packState === "idle") loadPack(); if (riskState === "idle") loadRisk(); loadHistVacs(); loadPost10(); if (contrState === "idle") loadContratados(); if (cliState === "idle") loadClientes(); if (tkState === "idle") loadTickets(); if (quejasState === "idle") loadQuejas(); if (cohState === "idle") loadCoh(); if (cancelState === "idle") loadCancels(); else if (cancelState === "ok") loadCancelContacts(); if (todoView === "prog") { $("content").innerHTML = renderProgreso(); return; } if (todoView === "atr") { $("content").innerHTML = renderTodo("atr"); return; } $("content").innerHTML = renderTodo(); return; }
+  if (section === "todo") { const nAtr = (packRows.length || riskRows.length) ? todoAtrasadas().length : 0; const nPP = Object.values(pautaReq).filter(x => x.decision === "si" && x.estado === "pendiente").length; $("seg").innerHTML = `<button aria-pressed="${todoView === "hoy"}" data-todoview="hoy">Tareas de hoy</button><button aria-pressed="${todoView === "pp"}" data-todoview="pp">Por pautar<span class="n">${nPP}</span></button><button aria-pressed="${todoView === "atr"}" data-todoview="atr">Días anteriores<span class="n ${nAtr ? "zero" : ""}">${nAtr}</span></button><button aria-pressed="${todoView === "prog"}" data-todoview="prog">Progreso</button>`; if (todoView === "pp") { $("content").innerHTML = renderPorPautar(); return; } if (packState === "idle") loadPack(); if (riskState === "idle") loadRisk(); loadHistVacs(); loadPost10(); if (contrState === "idle") loadContratados(); if (cliState === "idle") loadClientes(); if (tkState === "idle") loadTickets(); if (quejasState === "idle") loadQuejas(); if (cohState === "idle") loadCoh(); if (cancelState === "idle") loadCancels(); else if (cancelState === "ok") loadCancelContacts(); if (falloState === "idle") loadFallidos(); else if (falloState === "ok") loadCancelContacts(); if (renewState === "idle") loadRenewals(); if (todoView === "prog") { $("content").innerHTML = renderProgreso(); return; } if (todoView === "atr") { $("content").innerHTML = renderTodo("atr"); return; } $("content").innerHTML = renderTodo(); return; }
   if (section === "ins") $("seg").innerHTML = [["canc90", "Cancelaciones · 90 días"], ["canc30", "Cancelaciones · 30 días"], ["cancres", "Cancelaciones · 90 vs 30"], ["resp", "Tiempo de respuesta"], ["clientes", "Clientes"], ["contratados", "Contratados"], ["comunicacion", "Comunicación"]].map(([id, l]) => `<button aria-pressed="${insView === id}" data-insview="${id}">${l}</button>`).join("");
   if (section === "ins") { if (cancDState === "idle") loadCancData(); $("content").innerHTML = insView === "comunicacion" ? renderComunicacion() : insView === "contratados" ? renderContratadosIns() : insView === "clientes" ? renderClientes() : insView === "resp" ? renderRespuesta() : insView === "cancres" ? renderCancResumen() : renderCancelaciones(insView === "canc30" ? 30 : 90); if (openId) renderPanel(); return; }
   if (section === "cal" && calView === "pack") {
@@ -3667,6 +3757,7 @@ document.addEventListener("click", e => {
   const pd_ = t.closest("[data-pdec]"); if (pd_) { const tk = todoTasks().find(x => x.key === pd_.dataset.key); if (tk) decidirPauta(tk, pd_.dataset.pdec === "si"); return; }
   const pok = t.closest("[data-ppok]"); if (pok) { resolverPauta(pok.dataset.ppok, true); return; }
   const pno = t.closest("[data-ppno]"); if (pno) { resolverPauta(pno.dataset.ppno, false); return; }
+  const tm_ = t.closest("[data-todomacro]"); if (tm_) { todoMacro = tm_.dataset.todomacro; todoGrupo = ""; render(); return; }
   const tg_ = t.closest("[data-todog]"); if (tg_) { todoGrupo = tg_.dataset.todog; render(); return; }
   const tf_ = t.closest("[data-todof]"); if (tf_) { todoFilter = tf_.dataset.todof; render(); return; }
   const tr_ = t.closest("[data-todoreasig]"); if (tr_) { todoReassign(tr_.dataset.todoacc, tr_.dataset.todoreasig); return; }
